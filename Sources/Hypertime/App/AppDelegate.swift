@@ -20,11 +20,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// True until the launch activation has been consumed, so it is not mistaken for Cmd+Tab.
     private var isLaunching = true
 
-    /// Process start, used for the launch-time budget (< 300 ms to the status item).
-    static let launchDate = NSRunningApplication.current.launchDate ?? Date()
+    /// Process start, for the launch-time budget (< 300 ms to the status item). Nil when the
+    /// binary was run directly instead of launched, where there is no pre-main figure to have.
+    static let launchDate = NSRunningApplication.current.launchDate
+    /// Entry into our own code: everything before this is dyld and runtime setup, which the app
+    /// can only influence by linking less.
+    static let mainDate = Date()
 
     static func main() {
         _ = launchDate                      // pin the measurement to process start
+        _ = mainDate
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -57,11 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         systemEvents = SystemEventsObserver(model: model)
 
         wire()
-        LoginItemController.synchronise(settings: model.settings)
-        model.start()
+        model.start()                       // also schedules the post-launch housekeeping
 
-        let launchMilliseconds = Date().timeIntervalSince(Self.launchDate) * 1000
-        Log.app.notice("Status item ready \(launchMilliseconds, format: .fixed(precision: 0)) ms after launch")
+        let setUp = Date().timeIntervalSince(Self.mainDate) * 1000
+        let total = Self.launchDate.map { Date().timeIntervalSince($0) * 1000 } ?? setUp
+        Log.app.notice("Status item ready \(total, format: .fixed(precision: 0)) ms after launch, \(setUp, format: .fixed(precision: 0)) ms of it after main()")
         if let quarantined = model.store.recoveredFromCorruption {
             reportDatabaseRecovery(quarantined)
         }

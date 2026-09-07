@@ -10,9 +10,18 @@ enum SelfTest {
     static func run(model: AppModel, statusItem: StatusItemController, panel: CheckInPanelController) {
         let viewModel = panel.viewModel
 
-        let launchMilliseconds = Date().timeIntervalSince(AppDelegate.launchDate) * 1000
-        check("status item is ready within 300 ms of launch", launchMilliseconds < 300,
-              String(format: "%.0f ms", launchMilliseconds))
+        // The Phase 3 budget is the whole launch, but the pre-main share only exists when the
+        // app was launched rather than run directly, so it is asserted only when it is real.
+        let now = Date()
+        let setUp = now.timeIntervalSince(AppDelegate.mainDate) * 1000
+        check("app set-up to the status item is under 250 ms", setUp < 250, String(format: "%.0f ms", setUp))
+        if let launched = AppDelegate.launchDate {
+            let total = now.timeIntervalSince(launched) * 1000
+            check("launch to the status item is under 300 ms", total < 300,
+                  String(format: "%.0f ms total, %.0f ms before main()", total, total - setUp))
+        } else {
+            note("launch budget not measured: run from a bundle launch to check the 300 ms figure")
+        }
         check("status item button exists", statusItem.button != nil)
         check("status item has a template image", statusItem.button?.image?.isTemplate == true)
         check("menu bar glyphs are 18×18 templates", [MenuBarGlyph.State.idle, .tracking, .paused].allSatisfy {
@@ -186,6 +195,10 @@ enum SelfTest {
 
     private static func panelFrame(_ panel: CheckInPanelController) -> NSRect {
         NSApp.windows.first { $0 is CheckInPanel }?.frame ?? .zero
+    }
+
+    private static func note(_ text: String) {
+        FileHandle.standardError.write(Data("--   \(text)\n".utf8))
     }
 
     private static func check(_ name: String, _ condition: Bool, _ detail: String = "") {

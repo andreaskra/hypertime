@@ -65,6 +65,13 @@ final class AppModel {
     // MARK: - Lifecycle
 
     func start() {
+        // Housekeeping that must happen every launch but not before the UI is up.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            try? self.store.pruneChangeLog()
+            LoginItemController.synchronise(settings: self.settings)
+        }
+
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.engine.tick() }
         }

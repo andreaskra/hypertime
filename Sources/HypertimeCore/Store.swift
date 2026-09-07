@@ -100,7 +100,6 @@ public final class Store: @unchecked Sendable {
             self.recoveredFromCorruption = Self.quarantine(path: path, clock: clock)
             self.dbQueue = try Self.open(path: path, config: config)
         }
-        try pruneChangeLog()
     }
 
     private static func open(path: String, config: Configuration) throws -> DatabaseQueue {
@@ -408,7 +407,8 @@ public final class Store: @unchecked Sendable {
         }
     }
 
-    /// Drops change-log rows older than 90 days (run on launch).
+    /// Drops change-log rows older than 90 days. Called shortly after launch rather than during
+    /// `init`, so a write transaction never sits between the user and the status item.
     public func pruneChangeLog(olderThan days: Int = 90) throws {
         let cutoff = clock.now().addingTimeInterval(-Double(days) * 86_400).timeIntervalSince1970
         try dbQueue.write { db in
