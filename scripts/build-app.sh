@@ -21,13 +21,14 @@ for bundle in "$BIN_PATH"/*.bundle; do
   [ -e "$bundle" ] && cp -R "$bundle" "$APP/Contents/Resources/"
 done
 
-# Asset catalogue is optional until the Phase 2 design handoff lands.
-if [ -d "$RESOURCES/Assets.xcassets" ]; then
-  xcrun actool "$RESOURCES/Assets.xcassets" \
-    --compile "$APP/Contents/Resources" \
-    --platform macosx --minimum-deployment-target 15.0 \
-    --app-icon AppIcon --output-partial-info-plist /tmp/hypertime-assets.plist >/dev/null
+# App icon: rendered from the handoff's vector definition, then packed with iconutil.
+ICON_WORK="$(mktemp -d)"
+if "$APP/Contents/MacOS/Hypertime" --render-icon "$ICON_WORK" 2>/dev/null; then
+  iconutil -c icns "$ICON_WORK/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
+else
+  echo "Warning: could not render the app icon."
 fi
+rm -rf "$ICON_WORK"
 
 codesign --force --sign - --entitlements "$RESOURCES/Hypertime.entitlements" "$APP" 2>/dev/null
 

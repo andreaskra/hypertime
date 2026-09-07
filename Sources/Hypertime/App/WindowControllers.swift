@@ -9,7 +9,7 @@ final class ReportsWindowController {
     private let model: AppModel
     private let activation: ActivationController
     let viewModel: ReportsViewModel
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
     var onExport: ((Period) -> Void)?
 
     init(model: AppModel, activation: ActivationController) {
@@ -25,13 +25,14 @@ final class ReportsWindowController {
                 guard let self else { return }
                 self.onExport?(self.viewModel.period)
             }
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480),
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: Tokens.Size.reportsDefault),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                   backing: .buffered,
                                   defer: false)
             window.title = "Hypertime Reports"
             window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
+            window.backgroundColor = .clear
             window.contentView = NSHostingView(rootView: root)
             window.center()
             window.setFrameAutosaveName("HypertimeReports")
@@ -64,12 +65,14 @@ final class SettingsWindowController {
 
     func show() {
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Tokens.Size.settingsWidth, height: 560),
                                   styleMask: [.titled, .closable, .fullSizeContentView],
                                   backing: .buffered,
                                   defer: false)
             window.title = "Hypertime Settings"
+            window.titlebarAppearsTransparent = true
             window.isReleasedWhenClosed = false
+            window.backgroundColor = .clear
             window.contentView = NSHostingView(rootView: SettingsView(viewModel: viewModel))
             window.center()
             self.window = window
@@ -87,6 +90,8 @@ final class ExportController {
     private let activation: ActivationController
     private var window: NSWindow?
     private var viewModel: ExportViewModel?
+    /// The window the sheet attaches to, when one is open.
+    var hostWindowProvider: (() -> NSWindow?)?
 
     init(model: AppModel, activation: ActivationController) {
         self.model = model
@@ -99,20 +104,29 @@ final class ExportController {
         if period == nil { viewModel.scopeKind = .range }
         self.viewModel = viewModel
 
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 360),
-                              styleMask: [.titled, .closable],
-                              backing: .buffered,
-                              defer: false)
-        window.title = "Export CSV"
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: ExportView(
+        let hosting = NSHostingView(rootView: ExportView(
             viewModel: viewModel,
             onExport: { [weak self] in self?.runSavePanel() },
             onCancel: { [weak self] in self?.close() }
         ))
-        window.center()
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: hosting.fittingSize),
+                              styleMask: [.titled, .closable, .fullSizeContentView],
+                              backing: .buffered,
+                              defer: false)
+        window.title = "Export CSV"
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.contentView = hosting
         self.window = window
-        activation.activate { window.makeKeyAndOrderFront(nil) }
+
+        // Presented as a sheet on Reports when it is open, otherwise as its own window.
+        if let host = hostWindowProvider?(), host.isVisible {
+            activation.activate { host.beginSheet(window) { _ in } }
+        } else {
+            window.center()
+            activation.activate { window.makeKeyAndOrderFront(nil) }
+        }
     }
 
     /// Direct export without the options sheet (status item shortcuts).
@@ -163,7 +177,11 @@ final class ExportController {
     }
 
     private func close() {
-        window?.close()
+        if let window, let host = window.sheetParent {
+            host.endSheet(window)
+        } else {
+            window?.close()
+        }
         window = nil
         viewModel = nil
     }

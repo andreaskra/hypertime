@@ -1,6 +1,7 @@
 import SwiftUI
 import HypertimeCore
 
+/// A-settings: 480 pt, grouped rows on the window material (§6.12).
 struct SettingsView: View {
     @Bindable var viewModel: SettingsViewModel
 
@@ -43,10 +44,12 @@ struct SettingsView: View {
                 Toggle("Launch at login", isOn: $viewModel.launchAtLogin)
                 if viewModel.loginItemNeedsApproval {
                     Text("Approve Hypertime in System Settings › General › Login Items.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textSecondary.color)
                 } else if !viewModel.isInApplicationsFolder {
                     Text("Move Hypertime to /Applications for a reliable login item.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textSecondary.color)
                 }
             }
 
@@ -60,16 +63,16 @@ struct SettingsView: View {
                 Toggle("Include totals row and column", isOn: $viewModel.csvIncludeTotals)
             }
 
-            Section {
+            Section("Database") {
                 Text(viewModel.databasePath)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Tokens.Typography.caption)
+                    .foregroundStyle(Tokens.Palette.textTertiary.color)
                     .textSelection(.enabled)
-            } header: {
-                Text("Database")
             }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 560)
+        .scrollContentBackground(.hidden)
+        .background { GlassBackground(style: Tokens.Materials.window, cornerRadius: 0) }
+        .frame(width: Tokens.Size.settingsWidth, height: 560)
     }
 }

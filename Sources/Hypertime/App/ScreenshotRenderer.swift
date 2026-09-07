@@ -1,0 +1,147 @@
+import AppKit
+import SwiftUI
+import HypertimeCore
+
+/// `--screenshots <dir>`: renders every screen in light/dark, Increase Contrast and Reduce
+/// Transparency into PNGs for the Phase 2 design QA pass (§7.6).
+///
+/// Rendering goes through `cacheDisplay(in:to:)` on a real hosting view, so AppKit content
+/// (the text fields) is included. Window-server materials cannot be captured off-screen, so
+/// glass surfaces render as their Reduce Transparency fallback; live glass must be checked on
+/// screen.
+@MainActor
+enum ScreenshotRenderer {
+
+    struct Mode {
+        let suffix: String
+        let appearance: NSAppearance.Name
+    }
+
+    static let modes = [
+        Mode(suffix: "light", appearance: .aqua),
+        Mode(suffix: "dark", appearance: .darkAqua),
+        Mode(suffix: "light-contrast", appearance: .accessibilityHighContrastAqua),
+        Mode(suffix: "dark-contrast", appearance: .accessibilityHighContrastDarkAqua),
+    ]
+
+    static func run(model: AppModel, directory: String) {
+        let url = URL(fileURLWithPath: directory, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+
+        let checkIn = CheckInViewModel(model: model)
+        let presentation = PanelPresentation()
+        presentation.isAppeared = true
+        presentation.mode = .focused
+
+        let reports = ReportsViewModel(model: model)
+        let settings = SettingsViewModel(model: model)
+        let export = ExportViewModel(model: model, initialPeriod: .month(year: model.today.year, month: model.today.month))
+
+        // Popup states. Tracking is started so the states match the artboards; the live amount
+        // is a fixture value because the renderer never ticks the clock.
+        if let project = model.projects().first {
+            model.engine.start(projectID: project.id)
+        }
+
+        checkIn.prepareForShow()
+        checkIn.timeText = "0:12:34"
+        render("popup-hero", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+
+        checkIn.focus = .project
+        checkIn.projectTextChanged("e")
+        render("popup-dropdown", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+
+        checkIn.prepareForShow()
+        checkIn.focus = .time
+        checkIn.timeTextChanged("0:45")
+        render("popup-amount-editing", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+
+        checkIn.timeTextChanged("nonsense")
+        checkIn.commit()
+        render("popup-amount-invalid", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+
+        checkIn.prepareForShow()
+        checkIn.timeText = "0:12:34"
+        if let first = checkIn.todayRows.first {
+            checkIn.focus = .total(first.project.id)
+        }
+        render("popup-row-focused", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+
+        let passive = PanelPresentation()
+        passive.isAppeared = true
+        passive.mode = .passive
+        passive.isDraining = true
+        passive.drainProgress = 0.6
+        checkIn.prepareForShow()
+        checkIn.timeText = "0:12:34"
+        render("popup-passive", AnyView(CheckInView(viewModel: checkIn, presentation: passive)), in: url)
+
+        model.engine.pause(until: model.clock.now().addingTimeInterval(3600), reason: .manual)
+        checkIn.prepareForShow()
+        checkIn.timeText = "0:12:34"
+        render("popup-paused", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+        model.engine.resume()
+
+        // Fresh launch (empty database) and a today list long enough to scroll.
+        if let empty = try? AppModel(arguments: ["--self-test"]) {
+            let emptyCheckIn = CheckInViewModel(model: empty)
+            emptyCheckIn.prepareForShow()
+            render("popup-empty", AnyView(CheckInView(viewModel: emptyCheckIn, presentation: presentation)), in: url)
+
+            for name in ["Hypertime", "Client · Müller", "Admin", "Design System", "Sales calls", "Learning", "Support"] {
+                if let project = try? empty.store.findOrCreateProject(named: name) {
+                    try? empty.store.setSeconds(project: project.id, day: empty.today, Int.random(in: 12...220) * 60)
+                }
+            }
+            emptyCheckIn.prepareForShow()
+            emptyCheckIn.timeText = "0:12:34"
+            render("popup-scrolled", AnyView(CheckInView(viewModel: emptyCheckIn, presentation: presentation)), in: url)
+        }
+
+        render("pause-popover", AnyView(PausePopoverView(morningHour: model.settings.morningHour,
+                                                        validate: { try? model.parser.parse($0).seconds },
+                                                        onPick: { _, _ in })), in: url)
+
+        // Reports.
+        for kind in [PeriodKind.day, .week, .month, .year] {
+            reports.kind = kind
+            render("reports-\(kind.rawValue)",
+                   AnyView(ReportsView(viewModel: reports, onExport: {}).frame(width: Tokens.Size.reportsDefault.width,
+                                                                              height: Tokens.Size.reportsDefault.height)),
+                   in: url)
+        }
+
+        render("settings", AnyView(SettingsView(viewModel: settings)), in: url)
+        render("export", AnyView(ExportView(viewModel: export, onExport: {}, onCancel: {})), in: url)
+
+        FileHandle.standardError.write(Data("screenshots written to \(url.path)\n".utf8))
+        exit(0)
+    }
+
+    /// Renders one view in every appearance mode.
+    private static func render(_ name: String, _ view: AnyView, in directory: URL) {
+        for mode in modes {
+            // Materials cannot be captured off-screen; draw their opaque fallback instead.
+            let root = view.environment(\.opaqueSurfaces, true)
+            let hosting = NSHostingView(rootView: root)
+            hosting.appearance = NSAppearance(named: mode.appearance)
+
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: hosting.fittingSize),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: mode.appearance)
+            window.contentView = hosting
+            window.setFrame(NSRect(origin: NSPoint(x: -5000, y: -5000), size: hosting.fittingSize), display: false)
+            hosting.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+
+            let bounds = hosting.bounds
+            guard bounds.width > 1, bounds.height > 1,
+                  let rep = hosting.bitmapImageRepForCachingDisplay(in: bounds) else { continue }
+            rep.size = bounds.size
+            hosting.cacheDisplay(in: bounds, to: rep)
+
+            guard let data = rep.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else { continue }
+            try? data.write(to: directory.appendingPathComponent("\(name)-\(mode.suffix).png"))
+        }
+    }
+}

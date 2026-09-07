@@ -60,9 +60,26 @@ final class ReportsViewModel {
     }
 
     func showDay(_ day: LocalDate) {
-        anchor = day
-        kind = .day                                       // didSet rebuilds the period and reloads
+        show(.day, anchoredAt: day)
     }
+
+    /// Drilling down from a grid cell: month cells open the day, year cells open the month.
+    func show(_ kind: PeriodKind, anchoredAt day: LocalDate) {
+        anchor = day
+        if self.kind == kind {
+            period = Period.containing(day, kind: kind, calendar: calendar, weekStart: weekStart)
+            reload()
+        } else {
+            self.kind = kind                              // didSet rebuilds the period and reloads
+        }
+    }
+
+    /// Busiest day in the period, for the month view's intensity cells.
+    var busiestDaySeconds: Seconds {
+        report?.perDayTotal.values.max() ?? 0
+    }
+
+    func isToday(_ day: LocalDate) -> Bool { day == model.today }
 
     // MARK: - Editing
 

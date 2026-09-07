@@ -7,6 +7,8 @@ enum CheckInFocus: Hashable {
     case project
     case time
     case total(UUID)
+    /// The Confirm button ends the Tab order (§6.4, design handoff "Focus & keyboard").
+    case confirm
     case none
 }
 
@@ -74,6 +76,9 @@ final class CheckInViewModel {
     var showsProjectList: Bool { focus == .project && !matches.isEmpty }
 
     var timeStyle: TimeStyle { model.settings.timeDisplayStyle }
+
+    /// The project time is currently accruing to — not what the field says.
+    var currentProjectName: String? { model.currentProject?.name }
     var currentProjectID: UUID? { model.engine.currentProjectID }
     var pendingSeconds: Seconds { model.engine.pendingSeconds }
 
@@ -81,7 +86,8 @@ final class CheckInViewModel {
 
     /// Called every time the popup is about to be shown.
     func prepareForShow() {
-        let current = model.currentProject
+        // R-05: the most recently used project is preselected, even on a fresh launch.
+        let current = model.currentProject ?? model.projects().first
         query = ""
         fieldText = current?.name ?? ""
         isEditingTime = false
@@ -276,14 +282,14 @@ final class CheckInViewModel {
         case .project:
             focus = .time
         case .time:
-            focus = todayRows.first.map { .total($0.project.id) } ?? .none
+            focus = todayRows.first.map { .total($0.project.id) } ?? .confirm
         case .total(let id):
             if let index = todayRows.firstIndex(where: { $0.project.id == id }), index + 1 < todayRows.count {
                 focus = .total(todayRows[index + 1].project.id)
             } else {
-                focus = .none
+                focus = .confirm
             }
-        case .none:
+        case .confirm, .none:
             focus = .project
         }
     }
@@ -300,6 +306,8 @@ final class CheckInViewModel {
             } else {
                 focus = .time
             }
+        case .confirm:
+            focus = todayRows.last.map { .total($0.project.id) } ?? .time
         case .none:
             focus = .project
         }

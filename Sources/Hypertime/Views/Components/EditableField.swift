@@ -2,12 +2,14 @@ import AppKit
 import SwiftUI
 
 /// An `NSTextField` wrapped for SwiftUI so Tab/Enter/Esc/arrow keys can be intercepted
-/// deterministically (§6.4). SwiftUI's own focus handling is not precise enough here.
+/// deterministically (§6.4). Phase 2 draws the chrome in SwiftUI, so the field itself is
+/// borderless and transparent.
 struct EditableField: NSViewRepresentable {
     var text: String
     var placeholder: String = ""
+    var font: Tokens.FontToken = Tokens.Typography.body
+    var textColor: NSColor = Tokens.Palette.textPrimary.nsColor
     var isInvalid: Bool = false
-    var monospacedDigits: Bool = false
     var alignment: NSTextAlignment = .natural
     var isFocused: Bool
     var selectAllOnFocus: Bool = false
@@ -20,17 +22,15 @@ struct EditableField: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField(string: text)
         field.delegate = context.coordinator
-        field.placeholderString = placeholder
-        field.alignment = alignment
+        field.isBordered = false
+        field.drawsBackground = false
+        field.backgroundColor = .clear
+        field.focusRingType = .none                     // the design draws its own ring
         field.lineBreakMode = .byTruncatingTail
-        field.isBordered = true
-        field.bezelStyle = .roundedBezel
-        field.focusRingType = .default
+        field.usesSingleLineMode = true
+        field.cell?.sendsActionOnEndEditing = false
         field.setContentHuggingPriority(.defaultLow, for: .horizontal)
         field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        if monospacedDigits {
-            field.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        }
         return field
     }
 
@@ -44,8 +44,15 @@ struct EditableField: NSViewRepresentable {
             // selected so the first keystroke still replaces it.
             if wasEditing, selectAllOnFocus { field.currentEditor()?.selectAll(nil) }
         }
-        field.placeholderString = placeholder
-        field.textColor = isInvalid ? .systemRed : .labelColor
+        field.font = font.nsFont
+        field.alignment = alignment
+        field.textColor = isInvalid ? Tokens.Palette.invalid.nsColor : textColor
+        if field.placeholderString != placeholder {
+            field.placeholderAttributedString = NSAttributedString(
+                string: placeholder,
+                attributes: [.font: font.nsFont, .foregroundColor: Tokens.Palette.textTertiary.nsColor]
+            )
+        }
 
         guard let window = field.window else { return }
         let isFirstResponder = window.firstResponder === field.currentEditor() && field.currentEditor() != nil

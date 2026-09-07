@@ -60,34 +60,50 @@ final class ExportViewModel {
     var suggestedFilename: String { CSVExporter.suggestedFilename(scope: scope) }
 
     func csv() throws -> String { try model.exporter.csv(scope: scope, options: options) }
+
+    /// Header plus the first data row, so the delimiter and cell format are visible before saving.
+    var previewLines: [String] {
+        guard let csv = try? csv() else { return [] }
+        return csv
+            .replacingOccurrences(of: "\u{FEFF}", with: "")
+            .components(separatedBy: "\r\n")
+            .prefix(2)
+            .map { String($0.prefix(120)) }
+    }
 }
 
-/// Export options sheet (R-19, §6.11).
+/// A-export: export options on the sheet material, with a CSV preview line (R-19, §6.11).
 struct ExportView: View {
     @Bindable var viewModel: ExportViewModel
     var onExport: () -> Void
     var onCancel: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Export CSV").font(.headline)
+        VStack(alignment: .leading, spacing: Tokens.Space.s3) {
+            Text("Export CSV")
+                .font(Tokens.Typography.periodTitle)
+                .foregroundStyle(Tokens.Palette.textPrimary.color)
 
-            Picker("Scope", selection: $viewModel.scopeKind) {
+            Picker("", selection: $viewModel.scopeKind) {
                 Text("Month").tag(ExportViewModel.ScopeKind.month)
                 Text("Year").tag(ExportViewModel.ScopeKind.year)
                 Text("Date range").tag(ExportViewModel.ScopeKind.range)
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
 
-            switch viewModel.scopeKind {
-            case .month, .year:
-                DatePicker("Inside", selection: $viewModel.from, displayedComponents: .date)
-            case .range:
-                DatePicker("From", selection: $viewModel.from, displayedComponents: .date)
-                DatePicker("To", selection: $viewModel.to, displayedComponents: .date)
+            VStack(alignment: .leading, spacing: Tokens.Space.s2) {
+                switch viewModel.scopeKind {
+                case .month, .year:
+                    DatePicker("Inside", selection: $viewModel.from, displayedComponents: .date)
+                case .range:
+                    DatePicker("From", selection: $viewModel.from, displayedComponents: .date)
+                    DatePicker("To", selection: $viewModel.to, displayedComponents: .date)
+                }
             }
+            .font(Tokens.Typography.body)
 
-            Divider()
+            Hairline()
 
             Toggle("Semicolon delimiter", isOn: $viewModel.delimiterIsSemicolon)
             Picker("Cells", selection: $viewModel.cellStyle) {
@@ -97,18 +113,43 @@ struct ExportView: View {
             }
             Toggle("Include totals", isOn: $viewModel.includeTotals)
 
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(viewModel.previewLines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(Tokens.Typography.keyboardHint.font.monospaced())
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Tokens.Space.s2)
+            .background {
+                RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous)
+                    .fill(Tokens.Palette.rowHover.color)
+            }
+
             if let message = viewModel.message {
-                Text(message).font(.caption).foregroundStyle(.red)
+                Text(message)
+                    .font(Tokens.Typography.caption)
+                    .foregroundStyle(Tokens.Palette.invalid.color)
             }
 
             HStack {
-                Text(viewModel.suggestedFilename).font(.caption).foregroundStyle(.secondary)
+                Text(viewModel.suggestedFilename)
+                    .font(Tokens.Typography.caption)
+                    .foregroundStyle(Tokens.Palette.textTertiary.color)
                 Spacer()
-                Button("Cancel", action: onCancel).keyboardShortcut(.cancelAction)
-                Button("Export…", action: onExport).keyboardShortcut(.defaultAction)
+                Button("Cancel", action: onCancel)
+                    .hypertimeButton(.secondary)
+                    .keyboardShortcut(.cancelAction)
+                Button("Export…", action: onExport)
+                    .hypertimeButton(.primary)
+                    .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(16)
-        .frame(width: 380)
+        .padding(Tokens.Space.s4)
+        .frame(width: 400)
+        .background { GlassBackground(style: Tokens.Materials.sheet, cornerRadius: 0) }
     }
 }

@@ -3,35 +3,54 @@ import SwiftUI
 import HypertimeCore
 
 /// Every project with time today and its editable total (R-02, R-17).
+/// Six rows visible, then it scrolls with edge fades and a 3 pt overlay indicator.
 struct TodayListView: View {
     @Bindable var viewModel: CheckInViewModel
 
+    @State private var scrollOffset: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+
+    private var visibleHeight: CGFloat {
+        CGFloat(min(max(viewModel.todayRows.count, 1), Tokens.Size.todayListMaxVisibleRows)) * Tokens.Size.listRowHeight
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Tokens.Space.s1) {
             HStack {
-                Text("Today")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("TODAY")
+                    .font(Tokens.Typography.caption.font.weight(.semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(Tokens.Palette.textTertiary.color)
                 Spacer()
                 Text(viewModel.todayTotalText)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(Tokens.Typography.timeCell)
+                    .foregroundStyle(Tokens.Palette.textSecondary.color)
             }
 
             if viewModel.todayRows.isEmpty {
                 Text("Nothing tracked yet today.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .padding(.vertical, 4)
+                    .font(Tokens.Typography.caption)
+                    .foregroundStyle(Tokens.Palette.textTertiary.color)
+                    .frame(height: Tokens.Size.listRowHeight, alignment: .leading)
             } else {
                 ScrollView {
-                    VStack(spacing: 2) {
+                    VStack(spacing: 0) {
                         ForEach(viewModel.todayRows) { row in
                             TodayRowView(viewModel: viewModel, row: row)
                         }
                     }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("todayScroll")) } action: { rect in
+                        scrollOffset = -rect.minY
+                        contentHeight = rect.height
+                    }
                 }
-                .frame(maxHeight: CGFloat(min(viewModel.todayRows.count, 6)) * 26)
+                .coordinateSpace(.named("todayScroll"))
+                .scrollIndicators(.hidden)
+                .frame(height: visibleHeight)
+                .edgeFade(top: scrollOffset > 1, bottom: scrollOffset + visibleHeight < contentHeight - 1)
+                .overlay {
+                    ThinScrollIndicator(contentHeight: contentHeight, visibleHeight: visibleHeight, offset: scrollOffset)
+                }
             }
         }
     }
@@ -41,18 +60,39 @@ private struct TodayRowView: View {
     @Bindable var viewModel: CheckInViewModel
     let row: ReportRow
 
+    @State private var isHovering = false
+
+    private var isFocused: Bool { viewModel.focus == .total(row.project.id) }
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Tokens.Space.s2) {
             Circle()
-                .fill(viewModel.isCurrent(row) ? Color.accentColor : Color.clear)
-                .frame(width: 6, height: 6)
+                .fill(indicatorColor)
+                .frame(width: Tokens.Size.indicatorDot, height: Tokens.Size.indicatorDot)
             Text(row.project.name)
+                .font(viewModel.isCurrent(row) ? Tokens.Typography.listRowCurrent : Tokens.Typography.listRow)
+                .foregroundStyle(Tokens.Palette.textPrimary.color)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Spacer(minLength: 8)
+            Spacer(minLength: Tokens.Space.s2)
             TotalField(viewModel: viewModel, row: row)
         }
-        .frame(height: 24)
+        .padding(.horizontal, Tokens.Space.s2)
+        .frame(height: Tokens.Size.listRowHeight)
+        .background {
+            RoundedRectangle(cornerRadius: Tokens.Radius.row, style: .continuous)
+                .fill(isHovering ? Tokens.Palette.rowHover.color : .clear)
+        }
+        .focusRing(isFocused, radius: Tokens.Radius.row, width: Tokens.Focus.rowRingWidth, border: false)
+        .onHover { isHovering = $0 }
+    }
+
+    /// Only the project time is accruing to carries a live indicator.
+    private var indicatorColor: Color {
+        guard viewModel.isCurrent(row) else { return .clear }
+        if viewModel.isPaused { return Tokens.Palette.pausedIndicator.color }
+        if viewModel.isTracking { return Tokens.Palette.trackingIndicator.color }
+        return Tokens.Palette.idleIndicator.color
     }
 }
 
@@ -64,11 +104,14 @@ struct TotalField: View {
     @State private var text: String = ""
     @State private var isEditing = false
 
+    private var isInvalid: Bool { viewModel.invalidTotalRow == row.project.id }
+
     var body: some View {
         EditableField(
             text: isEditing ? text : viewModel.totalText(for: row),
-            isInvalid: viewModel.invalidTotalRow == row.project.id,
-            monospacedDigits: true,
+            font: Tokens.Typography.timeCell,
+            textColor: Tokens.Palette.textSecondary.nsColor,
+            isInvalid: isInvalid,
             alignment: .right,
             isFocused: viewModel.focus == .total(row.project.id),
             selectAllOnFocus: true,
@@ -84,7 +127,13 @@ struct TotalField: View {
                 isEditing = false
             }
         )
-        .frame(width: 84, height: 20)
+        .frame(width: 78, height: 20)
+        .padding(.horizontal, Tokens.Space.s1)
+        .background {
+            RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous)
+                .fill(isInvalid ? Tokens.Palette.invalidFieldBackground.color
+                      : (isEditing ? Tokens.Palette.fieldBackground.color : .clear))
+        }
     }
 
     private func handle(_ selector: Selector, _ modifiers: NSEvent.ModifierFlags) -> Bool {

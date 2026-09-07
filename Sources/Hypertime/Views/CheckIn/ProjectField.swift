@@ -1,22 +1,44 @@
 import AppKit
 import SwiftUI
 
-/// The project name field. Typing filters, ↑/↓ move the selection, Tab goes to the time
-/// field, Enter commits, Esc closes (R-11, §6.4).
+/// The project combobox (30 pt, r10). Typing filters, ↑/↓ move the dropdown highlight,
+/// Tab goes to the amount field, Enter commits, Esc closes (R-11, §6.4).
 struct ProjectField: View {
     @Bindable var viewModel: CheckInViewModel
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private var isFocused: Bool { viewModel.focus == .project }
 
     var body: some View {
-        EditableField(
-            text: viewModel.fieldText,
-            placeholder: "What are you working on?",
-            isFocused: viewModel.focus == .project,
-            selectAllOnFocus: true,
-            onText: { viewModel.projectTextChanged($0) },
-            onCommand: handle,
-            onBeginEditing: { viewModel.focus = .project }
-        )
-        .frame(height: 22)
+        HStack(spacing: Tokens.Space.s2) {
+            EditableField(
+                text: viewModel.fieldText,
+                placeholder: "Project name",
+                font: Tokens.Typography.body,
+                isFocused: isFocused,
+                selectAllOnFocus: true,
+                onText: { viewModel.projectTextChanged($0) },
+                onCommand: handle,
+                onBeginEditing: { viewModel.focus = .project }
+            )
+            Image(systemName: Tokens.Icons.dropdownChevron)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Tokens.Palette.textTertiary.color)
+        }
+        .padding(.horizontal, Tokens.Space.s3)
+        .frame(height: Tokens.Size.fieldHeight)
+        .background {
+            RoundedRectangle(cornerRadius: Tokens.Radius.field, style: .continuous)
+                .fill(Tokens.Palette.fieldBackground.color)
+                .overlay {
+                    RoundedRectangle(cornerRadius: Tokens.Radius.field, style: .continuous)
+                        .strokeBorder(Tokens.Palette.separator.color,
+                                      lineWidth: Tokens.Focus.hairlineWidth(contrast == .increased))
+                }
+        }
+        .focusRing(isFocused, radius: Tokens.Radius.field)
+        .contentShape(Rectangle())
+        .onTapGesture { viewModel.focus = .project }
     }
 
     private func handle(_ selector: Selector, _ modifiers: NSEvent.ModifierFlags) -> Bool {

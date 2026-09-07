@@ -35,20 +35,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func refresh() {
         guard let button = statusItem.button else { return }
-        let symbol: String
+        let state: MenuBarGlyph.State
         switch model.engine.status {
-        case .idle: symbol = "clock"
-        case .tracking: symbol = "clock.fill"
-        case .paused: symbol = "pause.circle"
+        case .idle: state = .idle
+        case .tracking: state = .tracking
+        case .paused: state = .paused
         }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Hypertime")
-        image?.isTemplate = true
-        button.image = image
+        button.image = MenuBarGlyph.image(state)
 
         if model.settings.showElapsedInMenuBar, let project = model.currentProject {
             let seconds = model.liveSeconds(project: project.id, day: model.today)
             button.title = " " + model.formatter.string(seconds, style: .clockNoSeconds)
-            button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize - 1, weight: .regular)
+            button.font = Tokens.Typography.menuBarTime.nsFont
         } else {
             button.title = ""
         }

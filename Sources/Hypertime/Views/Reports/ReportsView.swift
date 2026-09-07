@@ -1,27 +1,34 @@
 import SwiftUI
 import HypertimeCore
 
-/// Day / Week / Month / Year reports with editable totals (R-17, R-18, §6.10).
+/// Day / Week / Month / Year reports with editable totals (R-17, R-18, §6.10), styled from the
+/// Phase 2 handoff: 52 pt toolbar, window material, today column tint, month intensity cells.
 struct ReportsView: View {
     @Bindable var viewModel: ReportsViewModel
     var onExport: () -> Void
 
+    @Environment(\.colorScheme) private var scheme
+
+    private let nameColumn: CGFloat = 160
+    private let totalColumn: CGFloat = 82
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             toolbar
-            Divider()
+            Hairline()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            Divider()
+            Hairline()
             footer
         }
+        .background { GlassBackground(style: Tokens.Materials.window, cornerRadius: 0) }
         .frame(minWidth: 620, minHeight: 420)
     }
 
     // MARK: - Chrome
 
     private var toolbar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Tokens.Space.s3) {
             Picker("", selection: $viewModel.kind) {
                 Text("Day").tag(PeriodKind.day)
                 Text("Week").tag(PeriodKind.week)
@@ -30,26 +37,36 @@ struct ReportsView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 260)
+            .frame(width: 240)
 
-            HStack(spacing: 4) {
-                Button { viewModel.go(-1) } label: { Image(systemName: "chevron.left") }
+            HStack(spacing: Tokens.Space.s1) {
+                Button { viewModel.go(-1) } label: { Image(systemName: Tokens.Icons.navBack) }
                     .keyboardShortcut(.leftArrow, modifiers: .command)
                 Button("Today") { viewModel.goToToday() }
                     .keyboardShortcut("t", modifiers: .command)
-                Button { viewModel.go(1) } label: { Image(systemName: "chevron.right") }
+                Button { viewModel.go(1) } label: { Image(systemName: Tokens.Icons.navForward) }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
             }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
 
             Text(viewModel.title)
-                .font(.headline)
+                .font(Tokens.Typography.periodTitle)
+                .foregroundStyle(Tokens.Palette.textPrimary.color)
                 .lineLimit(1)
 
-            Spacer()
-            Button("Export…", action: onExport)
+            Spacer(minLength: Tokens.Space.s2)
+
+            Button {
+                onExport()
+            } label: {
+                Label("Export…", systemImage: Tokens.Icons.export)
+            }
+            .hypertimeButton(.secondary)
         }
-        .padding(10)
-        .background(alignment: .center) { periodShortcuts }
+        .padding(.horizontal, Tokens.Space.s4)
+        .frame(height: Tokens.Size.toolbarHeight)
+        .background { periodShortcuts }
     }
 
     /// ⌘1–4 switch the period kind.
@@ -66,18 +83,30 @@ struct ReportsView: View {
 
     private var footer: some View {
         HStack {
-            if let message = viewModel.errorMessage {
-                Text(message).foregroundStyle(.red).font(.callout)
-            } else if viewModel.kind == .day || viewModel.kind == .week {
-                Text("Edit a total to set it, or type +15m / -30m to adjust it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(footerHint)
+                .font(Tokens.Typography.caption)
+                .foregroundStyle(viewModel.errorMessage == nil
+                                 ? Tokens.Palette.textTertiary.color
+                                 : Tokens.Palette.invalid.color)
             Spacer()
-            Text("Total \(viewModel.text(viewModel.report?.total ?? 0))")
-                .font(.callout.monospacedDigit().bold())
+            Text("Total")
+                .font(Tokens.Typography.caption)
+                .foregroundStyle(Tokens.Palette.textSecondary.color)
+            Text(viewModel.text(viewModel.report?.total ?? 0))
+                .font(Tokens.Typography.timeCell.font.weight(.semibold))
+                .foregroundStyle(Tokens.Palette.textPrimary.color)
         }
-        .padding(10)
+        .padding(.horizontal, Tokens.Space.s4)
+        .frame(height: 36)
+    }
+
+    private var footerHint: String {
+        if let message = viewModel.errorMessage { return message }
+        switch viewModel.kind {
+        case .day, .week: return "Edit a total to set it, or type +15m / −30m to adjust it."
+        case .month: return "Click a day to open it."
+        case .year: return "Click a month to open it."
+        }
     }
 
     // MARK: - Content
@@ -86,43 +115,9 @@ struct ReportsView: View {
     private var content: some View {
         switch viewModel.kind {
         case .day: dayView
-        case .week: gridView(columns: viewModel.days.map { ($0.isoString, columnTitle($0), .day($0)) })
-        case .month: gridView(columns: viewModel.days.map { (String($0.day), String($0.day), .day($0)) })
+        case .week: weekView
+        case .month: monthView
         case .year: yearView
-        }
-    }
-
-    private func columnTitle(_ day: LocalDate) -> String {
-        Period.day(day).shortTitle(calendar: .autoupdatingCurrent, weekStart: .monday)
-    }
-
-    private var dayView: some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
-                ForEach(viewModel.report?.rows ?? []) { row in
-                    HStack {
-                        Text(row.project.name)
-                            .lineLimit(1)
-                        Spacer(minLength: 12)
-                        InlineTotalField(text: viewModel.text(row.seconds)) { text in
-                            viewModel.saveTotal(project: row.project.id, day: dayOfPeriod, text: text)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(height: 26)
-                    .contextMenu { projectMenu(row.project) }
-                }
-
-                HStack {
-                    TextField("Add project…", text: $viewModel.newProjectName)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { viewModel.addProject() }
-                    Button("Add") { viewModel.addProject() }
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-            }
-            .padding(.vertical, 8)
         }
     }
 
@@ -131,116 +126,268 @@ struct ReportsView: View {
         return viewModel.todayDate
     }
 
-    /// Week and Month: projects × days. Week cells are editable, Month cells open the day.
-    private func gridView(columns: [(String, String, Period)]) -> some View {
-        ScrollView([.horizontal, .vertical]) {
-            Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 4) {
-                GridRow {
-                    Text("Project").frame(width: 160, alignment: .leading)
-                    ForEach(columns, id: \.0) { column in
-                        Button(column.1) {
-                            if case .day(let day) = column.2 { viewModel.showDay(day) }
+    /// The same shape as the popup's today list, for any day.
+    private var dayView: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(viewModel.report?.rows ?? []) { row in
+                    HStack(spacing: Tokens.Space.s2) {
+                        Text(row.project.name)
+                            .font(Tokens.Typography.listRow)
+                            .foregroundStyle(Tokens.Palette.textPrimary.color)
+                            .lineLimit(1)
+                        Spacer(minLength: Tokens.Space.s3)
+                        InlineTotalField(text: viewModel.text(row.seconds)) { text in
+                            viewModel.saveTotal(project: row.project.id, day: dayOfPeriod, text: text)
                         }
-                        .buttonStyle(.link)
-                        .font(.caption)
-                        .frame(width: cellWidth)
                     }
-                    Text("Total").frame(width: 80)
+                    .padding(.horizontal, Tokens.Space.s2)
+                    .frame(height: Tokens.Size.listRowHeight)
+                    .contextMenu { projectMenu(row.project) }
                 }
-                Divider().gridCellUnsizedAxes(.horizontal)
+
+                HStack(spacing: Tokens.Space.s2) {
+                    Image(systemName: Tokens.Icons.addProject)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                    TextField("Add project…", text: $viewModel.newProjectName)
+                        .textFieldStyle(.plain)
+                        .font(Tokens.Typography.listRow)
+                        .onSubmit { viewModel.addProject() }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Tokens.Space.s2)
+                .frame(height: Tokens.Size.listRowHeight)
+            }
+            .padding(Tokens.Space.s4)
+            .frame(maxWidth: 420, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+
+    // MARK: - Week
+
+    private var weekView: some View {
+        let days = viewModel.days
+        return ScrollView([.horizontal, .vertical]) {
+            Grid(alignment: .trailing, horizontalSpacing: 0, verticalSpacing: 2) {
+                GridRow {
+                    Text("Project")
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .frame(width: nameColumn, alignment: .leading)
+                    ForEach(days, id: \.self) { day in
+                        Button {
+                            viewModel.showDay(day)
+                        } label: {
+                            Text(dayLabel(day))
+                                .font(Tokens.Typography.caption)
+                                .foregroundStyle(viewModel.isToday(day)
+                                                 ? Tokens.Palette.accent
+                                                 : Tokens.Palette.textTertiary.color)
+                                .frame(width: weekCell)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text("Total")
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .frame(width: totalColumn, alignment: .trailing)
+                }
+                .padding(.bottom, Tokens.Space.s1)
 
                 ForEach(viewModel.report?.rows ?? []) { row in
                     GridRow {
                         Text(row.project.name)
+                            .font(Tokens.Typography.listRow)
+                            .foregroundStyle(Tokens.Palette.textPrimary.color)
                             .lineLimit(1)
-                            .frame(width: 160, alignment: .leading)
+                            .frame(width: nameColumn, alignment: .leading)
                             .contextMenu { projectMenu(row.project) }
-                        ForEach(columns, id: \.0) { column in
-                            cell(row: row, column: column)
+                        ForEach(viewModel.days, id: \.self) { day in
+                            InlineTotalField(text: viewModel.text(row.seconds(on: day)),
+                                             width: weekCell - 8,
+                                             alignment: .right) { text in
+                                viewModel.saveTotal(project: row.project.id, day: day, text: text)
+                            }
+                            .frame(width: weekCell)
+                            .background {
+                                if viewModel.isToday(day) {
+                                    Rectangle().fill(Tokens.Palette.todayColumn(scheme))
+                                }
+                            }
                         }
                         Text(viewModel.text(row.seconds))
-                            .font(.body.monospacedDigit().bold())
-                            .frame(width: 80, alignment: .trailing)
+                            .font(Tokens.Typography.timeCell.font.weight(.semibold))
+                            .foregroundStyle(Tokens.Palette.textPrimary.color)
+                            .frame(width: totalColumn, alignment: .trailing)
                     }
                 }
 
-                Divider().gridCellUnsizedAxes(.horizontal)
                 GridRow {
-                    Text("Total").frame(width: 160, alignment: .leading).bold()
-                    ForEach(columns, id: \.0) { column in
-                        Text(viewModel.text(total(for: column.2)))
-                            .font(.caption.monospacedDigit())
-                            .frame(width: cellWidth, alignment: .trailing)
+                    Text("Total")
+                        .font(Tokens.Typography.caption.font.weight(.semibold))
+                        .foregroundStyle(Tokens.Palette.textSecondary.color)
+                        .frame(width: nameColumn, alignment: .leading)
+                    ForEach(days, id: \.self) { day in
+                        Text(viewModel.text(viewModel.report?.total(on: day) ?? 0))
+                            .font(Tokens.Typography.timeCell)
+                            .foregroundStyle(Tokens.Palette.textSecondary.color)
+                            .frame(width: weekCell, alignment: .trailing)
                     }
                     Text(viewModel.text(viewModel.report?.total ?? 0))
-                        .font(.body.monospacedDigit().bold())
-                        .frame(width: 80, alignment: .trailing)
+                        .font(Tokens.Typography.timeCell.font.weight(.semibold))
+                        .foregroundStyle(Tokens.Palette.textPrimary.color)
+                        .frame(width: totalColumn, alignment: .trailing)
                 }
+                .padding(.top, Tokens.Space.s1)
             }
-            .padding(12)
+            .padding(Tokens.Space.s4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
-    private var cellWidth: CGFloat { viewModel.kind == .week ? 84 : 60 }
+    private var weekCell: CGFloat { 68 }
 
-    @ViewBuilder
-    private func cell(row: ReportRow, column: (String, String, Period)) -> some View {
-        if case .day(let day) = column.2 {
-            if viewModel.kind == .week {
-                InlineTotalField(text: viewModel.text(row.seconds(on: day)), width: cellWidth) { text in
-                    viewModel.saveTotal(project: row.project.id, day: day, text: text)
+    private func dayLabel(_ day: LocalDate) -> String {
+        Period.day(day).shortTitle(calendar: .autoupdatingCurrent, weekStart: .monday)
+    }
+
+    // MARK: - Month
+
+    /// Intensity cells: one square per day, opacity scaled by that day's share of the busiest day.
+    private var monthView: some View {
+        let days = viewModel.days
+        let busiest = max(viewModel.busiestDaySeconds, 1)
+        return ScrollView([.horizontal, .vertical]) {
+            Grid(alignment: .trailing, horizontalSpacing: 2, verticalSpacing: 2) {
+                GridRow {
+                    Text("Project")
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .frame(width: nameColumn, alignment: .leading)
+                    ForEach(days, id: \.self) { day in
+                        Text(String(day.day))
+                            .font(Tokens.Typography.keyboardHint)
+                            .foregroundStyle(viewModel.isToday(day) ? Tokens.Palette.accent : Tokens.Palette.textTertiary.color)
+                            .frame(width: monthCell)
+                    }
+                    Text("Total")
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .frame(width: totalColumn, alignment: .trailing)
                 }
-            } else {
-                Button(viewModel.text(row.seconds(on: day))) { viewModel.showDay(day) }
-                    .buttonStyle(.plain)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(row.seconds(on: day) == 0 ? .tertiary : .primary)
-                    .frame(width: cellWidth, alignment: .trailing)
+
+                ForEach(viewModel.report?.rows ?? []) { row in
+                    GridRow {
+                        Text(row.project.name)
+                            .font(Tokens.Typography.listRow)
+                            .foregroundStyle(Tokens.Palette.textPrimary.color)
+                            .lineLimit(1)
+                            .frame(width: nameColumn, alignment: .leading)
+                            .contextMenu { projectMenu(row.project) }
+                        ForEach(days, id: \.self) { day in
+                            intensityCell(seconds: row.seconds(on: day), busiest: busiest, day: day)
+                        }
+                        Text(viewModel.text(row.seconds))
+                            .font(Tokens.Typography.timeCell.font.weight(.semibold))
+                            .foregroundStyle(Tokens.Palette.textPrimary.color)
+                            .frame(width: totalColumn, alignment: .trailing)
+                    }
+                }
             }
+            .padding(Tokens.Space.s4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
+
+    private var monthCell: CGFloat { 18 }
+
+    private func intensityCell(seconds: Seconds, busiest: Seconds, day: LocalDate) -> some View {
+        Button {
+            viewModel.showDay(day)
+        } label: {
+            RoundedRectangle(cornerRadius: Tokens.Radius.cell - 2, style: .continuous)
+                .fill(seconds == 0
+                      ? Tokens.Palette.rowHover.color
+                      : Tokens.Palette.accent.opacity(0.2 + 0.8 * min(Double(seconds) / Double(busiest), 1)))
+                .frame(width: monthCell, height: 18)
+                .overlay {
+                    if viewModel.isToday(day) {
+                        RoundedRectangle(cornerRadius: Tokens.Radius.cell - 2, style: .continuous)
+                            .strokeBorder(Tokens.Palette.accent, lineWidth: 1)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .help(seconds == 0 ? day.isoString : "\(day.isoString) · \(viewModel.text(seconds))")
+    }
+
+    // MARK: - Year
 
     private var yearView: some View {
         ScrollView([.horizontal, .vertical]) {
-            Grid(alignment: .trailing, horizontalSpacing: 10, verticalSpacing: 4) {
+            Grid(alignment: .trailing, horizontalSpacing: Tokens.Space.s1, verticalSpacing: 2) {
                 GridRow {
-                    Text("Project").frame(width: 160, alignment: .leading)
+                    Text("Project")
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .frame(width: nameColumn, alignment: .leading)
                     ForEach(viewModel.months, id: \.self) { month in
-                        Text(monthLabel(month)).font(.caption).frame(width: 64)
+                        Text(monthLabel(month))
+                            .font(Tokens.Typography.caption)
+                            .foregroundStyle(Tokens.Palette.textTertiary.color)
+                            .frame(width: yearCell)
                     }
-                    Text("Total").frame(width: 80)
+                    Text("Total")
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .frame(width: totalColumn, alignment: .trailing)
                 }
-                Divider().gridCellUnsizedAxes(.horizontal)
 
                 ForEach(viewModel.report?.rows ?? []) { row in
                     GridRow {
                         Text(row.project.name)
+                            .font(Tokens.Typography.listRow)
+                            .foregroundStyle(Tokens.Palette.textPrimary.color)
                             .lineLimit(1)
-                            .frame(width: 160, alignment: .leading)
+                            .frame(width: nameColumn, alignment: .leading)
                             .contextMenu { projectMenu(row.project) }
                         ForEach(viewModel.months, id: \.self) { month in
                             let seconds = monthSeconds(row: row, month: month)
-                            Button(viewModel.text(seconds)) {
-                                viewModel.showDay(month.range(calendar: .autoupdatingCurrent, weekStart: .monday).lowerBound)
+                            Button {
+                                viewModel.show(.month, anchoredAt: monthStart(month))
+                            } label: {
+                                Text(viewModel.text(seconds))
+                                    .font(Tokens.Typography.timeCell)
+                                    .foregroundStyle(seconds == 0
+                                                     ? Tokens.Palette.textTertiary.color
+                                                     : Tokens.Palette.textPrimary.color)
+                                    .frame(width: yearCell, alignment: .trailing)
                             }
                             .buttonStyle(.plain)
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(seconds == 0 ? .tertiary : .primary)
-                            .frame(width: 64, alignment: .trailing)
                         }
                         Text(viewModel.text(row.seconds))
-                            .font(.body.monospacedDigit().bold())
-                            .frame(width: 80, alignment: .trailing)
+                            .font(Tokens.Typography.timeCell.font.weight(.semibold))
+                            .foregroundStyle(Tokens.Palette.textPrimary.color)
+                            .frame(width: totalColumn, alignment: .trailing)
                     }
                 }
             }
-            .padding(12)
+            .padding(Tokens.Space.s4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
+
+    private var yearCell: CGFloat { 62 }
 
     private func monthLabel(_ period: Period) -> String {
         guard case .month(_, let month) = period else { return "" }
         return DateFormatter().shortMonthSymbols?[month - 1] ?? String(month)
+    }
+
+    private func monthStart(_ period: Period) -> LocalDate {
+        period.range(calendar: .autoupdatingCurrent, weekStart: .monday).lowerBound
     }
 
     private func monthSeconds(row: ReportRow, month: Period) -> Seconds {
@@ -248,10 +395,7 @@ struct ReportsView: View {
         return row.perDay.reduce(0) { $0 + (range.contains($1.key) ? $1.value : 0) }
     }
 
-    private func total(for period: Period) -> Seconds {
-        guard case .day(let day) = period else { return 0 }
-        return viewModel.report?.total(on: day) ?? 0
-    }
+    // MARK: - Project management
 
     @ViewBuilder
     private func projectMenu(_ project: Project) -> some View {

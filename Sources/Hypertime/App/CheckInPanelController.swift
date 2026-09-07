@@ -8,6 +8,8 @@ final class CheckInPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     var onEscape: (() -> Void)?
+    /// Handles keys when no text field is first responder (e.g. the Confirm button has focus).
+    var keyHandler: ((NSEvent) -> Bool)?
 
     override func cancelOperation(_ sender: Any?) {
         onEscape?()
@@ -18,13 +20,14 @@ final class CheckInPanel: NSPanel {
             onEscape?()
             return
         }
+        if keyHandler?(event) == true { return }
         super.keyDown(with: event)
     }
 }
 
-/// `NSVisualEffectView` that reports the mouse entering, so a passive popup can cancel its
+/// Transparent content view that reports the mouse entering, so a passive popup can cancel its
 /// auto-hide when the user reaches for it (D-14).
-final class HoverEffectView: NSVisualEffectView {
+final class HoverView: NSView {
     var onMouseEntered: (() -> Void)?
     private var hoverArea: NSTrackingArea?
 
@@ -45,17 +48,19 @@ final class HoverEffectView: NSVisualEffectView {
 
 @MainActor
 final class CheckInPanelController: NSObject, NSWindowDelegate {
-    enum Mode { case passive, focused }
+    typealias Mode = PanelMode
 
     private let model: AppModel
     private let activation: ActivationController
     let viewModel: CheckInViewModel
+    let presentation = PanelPresentation()
 
     private let panel: CheckInPanel
-    private let effectView: HoverEffectView
+    private let hoverView: HoverView
     private let hostingView: NSHostingView<CheckInView>
 
     private var autoHideTimer: Timer?
+    private var dismissWorkItem: DispatchWorkItem?
     /// True once the user has clicked or Cmd+Tabbed into the panel; only then do we hand focus back.
     private var didEngage = false
 
@@ -66,12 +71,18 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     var isVisible: Bool { panel.isVisible }
     var isKey: Bool { panel.isKeyWindow }
 
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
     init(model: AppModel, activation: ActivationController) {
         self.model = model
         self.activation = activation
         self.viewModel = CheckInViewModel(model: model)
 
-        panel = CheckInPanel(contentRect: NSRect(x: 0, y: 0, width: CheckInView.width, height: 200),
+        panel = CheckInPanel(contentRect: NSRect(x: 0, y: 0,
+                                                 width: Tokens.Size.popupWidth,
+                                                 height: Tokens.Size.popupMinHeight),
                              styleMask: [.nonactivatingPanel, .borderless, .fullSizeContentView],
                              backing: .buffered,
                              defer: false)
@@ -86,45 +97,45 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         panel.becomesKeyOnlyIfNeeded = false
         panel.isReleasedWhenClosed = false
 
-        effectView = HoverEffectView()
-        effectView.material = .hudWindow
-        effectView.blendingMode = .behindWindow
-        effectView.state = .active
-        effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 16
-        effectView.layer?.masksToBounds = true
-
-        hostingView = NSHostingView(rootView: CheckInView(viewModel: viewModel))
+        hoverView = HoverView()
+        hostingView = NSHostingView(rootView: CheckInView(viewModel: viewModel, presentation: presentation))
         hostingView.translatesAutoresizingMaskIntoConstraints = false
 
         super.init()
 
-        effectView.addSubview(hostingView)
+        hoverView.addSubview(hostingView)
         NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: effectView.leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: effectView.trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: effectView.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: effectView.bottomAnchor),
+            hostingView.leadingAnchor.constraint(equalTo: hoverView.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: hoverView.trailingAnchor),
+            hostingView.topAnchor.constraint(equalTo: hoverView.topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: hoverView.bottomAnchor),
         ])
-        panel.contentView = effectView
+        panel.contentView = hoverView
         panel.delegate = self
         panel.onEscape = { [weak self] in self?.close() }
-        effectView.onMouseEntered = { [weak self] in self?.cancelAutoHide() }
+        panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
+        hoverView.onMouseEntered = { [weak self] in self?.cancelAutoHide() }
 
         viewModel.onCommitted = { [weak self] in self?.finish(returnFocus: true) }
-        viewModel.onDiscarded = { [weak self] in self?.finish(returnFocus: true) }
+        viewModel.onDiscarded = { [weak self] in self?.animateDiscard() }
         viewModel.onClose = { [weak self] in self?.close() }
         viewModel.onContentSizeChanged = { [weak self] in self?.layoutPanel() }
         viewModel.onPauseRequested = { [weak self] in
             guard let self else { return }
-            self.onPauseRequested?(self.effectView)
+            self.onPauseRequested?(self.hoverView)
         }
+        presentation.onHeightRequest = { [weak self] height in self?.layoutPanel(height: height) }
     }
 
     // MARK: - Show / hide
 
     func show(mode: Mode) {
+        dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+
         viewModel.prepareForShow()
+        presentation.mode = mode
+        if !panel.isVisible { presentation.isAppeared = false }
         layoutPanel()
         position()
 
@@ -132,6 +143,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         case .passive:
             didEngage = false
             panel.orderFrontRegardless()                 // never activates us (R-08)
+            appear(Tokens.Motion.popupAppearPassive)
             startAutoHide()
         case .focused:
             didEngage = true
@@ -139,14 +151,35 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
             activation.activate {
                 panel.makeKeyAndOrderFront(nil)
             }
+            appear(Tokens.Motion.popupAppearFocused)
             viewModel.focus = .project
         }
         Log.panel.debug("show(\(String(describing: mode), privacy: .public))")
     }
 
+    private func appear(_ motion: Tokens.MotionToken) {
+        withAnimation(motion.animation(reduceMotion: reduceMotion)) {
+            presentation.isAppeared = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + motion.duration) { [weak self] in
+            self?.panel.invalidateShadow()
+        }
+    }
+
+    /// Animated dismiss; `orderOut` happens when the animation is done. Never changes focus.
     func hide() {
         cancelAutoHide()
-        panel.orderOut(nil)                              // never changes focus by itself
+        guard panel.isVisible else { return }
+        withAnimation(Tokens.Motion.popupDismiss.animation(reduceMotion: reduceMotion)) {
+            presentation.isAppeared = false
+        }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.panel.orderOut(nil)
+            self.presentation.isDiscarding = false
+        }
+        dismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Tokens.Motion.popupDismiss.duration, execute: work)
     }
 
     /// Status item click (§6.3).
@@ -154,8 +187,6 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         if isVisible && isKey {
             hide()
             activation.returnFocus()
-        } else if isVisible {
-            show(mode: .focused)
         } else {
             show(mode: .focused)
         }
@@ -172,6 +203,18 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         if returnFocus { activation.returnFocus() }
     }
 
+    /// Discard reads as "thrown away": the amount collapses and clears, then the panel dismisses.
+    private func animateDiscard() {
+        guard !reduceMotion else {
+            finish(returnFocus: true)
+            return
+        }
+        withAnimation(Tokens.Motion.discardCollapse.curve) { presentation.isDiscarding = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Tokens.Motion.discardCollapse.duration) { [weak self] in
+            self?.finish(returnFocus: true)
+        }
+    }
+
     /// Called by the 1 s timer while visible.
     func tick() {
         guard isVisible else { return }
@@ -184,15 +227,44 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         viewModel.refreshStatus()
     }
 
+    // MARK: - Keyboard when no field is first responder
+
+    private func handleKey(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 48:                                            // Tab
+            if event.modifierFlags.contains(.shift) {
+                viewModel.focusPrevious(from: viewModel.focus)
+            } else {
+                viewModel.focusNext(from: viewModel.focus)
+            }
+            return true
+        case 36, 76, 49:                                    // Return, Enter, Space
+            guard viewModel.focus == .confirm || viewModel.focus == .none else { return false }
+            viewModel.commit()
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: - Auto-hide (D-14)
 
     private func startAutoHide() {
         cancelAutoHide()
         let seconds = model.settings.passivePopupAutoHideSeconds
         guard seconds > 0 else { return }
+
+        presentation.drainProgress = 1
+        presentation.isDraining = true
+        if !reduceMotion {
+            withAnimation(.linear(duration: TimeInterval(seconds))) {
+                presentation.drainProgress = 0
+            }
+        }
         autoHideTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(seconds), repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.panel.isKeyWindow else { return }
+                self.presentation.isDraining = false
                 self.hide()                              // no focus change
             }
         }
@@ -201,20 +273,30 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     private func cancelAutoHide() {
         autoHideTimer?.invalidate()
         autoHideTimer = nil
+        if presentation.isDraining {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                presentation.isDraining = false
+                presentation.drainProgress = 1
+            }
+        }
     }
 
     // MARK: - Geometry
 
-    private func layoutPanel() {
-        hostingView.layoutSubtreeIfNeeded()
-        let fitting = hostingView.fittingSize
-        let size = NSSize(width: CheckInView.width, height: max(fitting.height, 120))
-        guard size != panel.frame.size else { return }
+    /// Grows downward only: the top edge stays anchored under the menu bar icon.
+    private func layoutPanel(height: CGFloat? = nil) {
+        let requested = height ?? max(hostingView.fittingSize.height, Tokens.Size.popupMinHeight)
+        let clamped = min(max(requested, Tokens.Size.popupMinHeight), Tokens.Size.popupMaxHeight * 1.5)
+        let size = NSSize(width: Tokens.Size.popupWidth, height: clamped)
+        guard abs(size.height - panel.frame.height) > 0.5 || size.width != panel.frame.width else { return }
         let top = panel.frame.maxY
         var frame = panel.frame
         frame.size = size
-        frame.origin.y = top - size.height                 // keep the top edge anchored
+        frame.origin.y = top - size.height
         panel.setFrame(frame, display: true)
+        panel.invalidateShadow()
     }
 
     private func position() {
@@ -247,6 +329,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         didEngage = true
         cancelAutoHide()
+        presentation.mode = .focused
         if viewModel.focus == .none { viewModel.focus = .project }
     }
 }

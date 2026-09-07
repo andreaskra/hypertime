@@ -12,6 +12,12 @@ enum SelfTest {
 
         check("status item button exists", statusItem.button != nil)
         check("status item has a template image", statusItem.button?.image?.isTemplate == true)
+        check("menu bar glyphs are 18×18 templates", [MenuBarGlyph.State.idle, .tracking, .paused].allSatisfy {
+            let image = MenuBarGlyph.image($0)
+            return image.isTemplate && image.size == NSSize(width: 18, height: 18)
+        })
+        check("app icon renders at 1024", MenuBarGlyph.appIcon(size: 1024).tiffRepresentation != nil)
+        check("popup width matches the design token", CheckInView.width == Tokens.Size.popupWidth)
 
         // Seed a project the way a first commit would.
         let project = try? model.store.findOrCreateProject(named: "Self Test")
@@ -44,7 +50,7 @@ enum SelfTest {
         let stored = (try? model.store.seconds(project: project?.id ?? UUID(), day: today)) ?? 0
         check("commit added the parsed time", stored == 5400, "\(stored)")
         check("commit started tracking", model.engine.status.isTracking)
-        check("commit hid the panel", !panel.isVisible)
+        check("commit started the dismiss animation", !panel.presentation.isAppeared)
 
         // Pending, discard and totals.
         model.engine.tick()
@@ -78,8 +84,12 @@ enum SelfTest {
         check("panel positions under the status item",
               panelFrame(panel).maxY <= (NSScreen.main?.frame.maxY ?? 0))
 
-        FileHandle.standardError.write(Data("self-test: \(failures == 0 ? "PASS" : "FAIL (\(failures))")\n".utf8))
-        exit(failures == 0 ? 0 : 1)
+        // The dismiss is animated; give it a run loop turn before checking the window is gone.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            check("panel is ordered out once the dismiss finishes", !panel.isVisible)
+            FileHandle.standardError.write(Data("self-test: \(failures == 0 ? "PASS" : "FAIL (\(failures))")\n".utf8))
+            exit(failures == 0 ? 0 : 1)
+        }
     }
 
     private static func panelFrame(_ panel: CheckInPanelController) -> NSRect {

@@ -41,8 +41,8 @@ final class AppModel {
     var onDataChanged: (() -> Void)?
 
     init(arguments: [String] = CommandLine.arguments) throws {
-        isDemo = arguments.contains("--seed-demo")
-        let isSelfTest = arguments.contains("--self-test")
+        isDemo = arguments.contains("--seed-demo") || arguments.contains("--screenshots")
+        let isSelfTest = arguments.contains("--self-test") || arguments.contains("--screenshots")
         settings = isSelfTest ? Settings.ephemeral(name: "self-test") : Settings()
         let clock = AppClock(settings: settings)
         self.clock = clock

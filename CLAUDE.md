@@ -5,14 +5,18 @@ assumptions (A-xx), component specs, and the phase plan with acceptance checklis
 `docs/DESIGN_BRIEF.md` describes the design handoff that Phase 2 consumes.
 `docs/DECISIONS.md` records every decision that refines or deviates from the plan.
 
-Status: **Phase 1 complete** (backbone + functional, unstyled UI). Phase 2 (visual design)
-is next and must not change anything below the view layer.
+Status: **Phase 2 complete** (visual design applied). The handoff lives in
+`docs/design-handoff/handoff/` (`tokens.json`, `HANDOFF.md`, SVG assets). Phase 3 (hardening
+and packaging) is next.
 
 ## Rules
 - `Sources/HypertimeCore` must not import AppKit or SwiftUI. Everything in it is tested with `swift test`.
 - Never call `Date()` in core code; use the injected `Clock`.
 - All persistence goes through `Store`. All UI binds to view models only.
-- Phase 2 reskins views; view models, engine and store stay untouched.
+- No view may contain a literal colour, size, radius, font or duration: everything comes from
+  `Views/Components/DesignTokens.swift`, which transcribes `tokens.json` 1:1.
+- `GlassBackground` is the only place that touches `NSVisualEffectView`; it falls back to a solid
+  colour under Reduce Transparency.
 - Record every decision that deviates from or refines the plan in `docs/DECISIONS.md` (date, ID, decision, why).
 
 ## Commands
@@ -24,6 +28,8 @@ scripts/build-app.sh                    # -> dist/Hypertime.app (ad-hoc signed)
 scripts/run.sh                          # kills running instance, builds, opens
 scripts/run.sh --seed-demo              # separate demo database (6 projects, 90 days)
 dist/Hypertime.app/Contents/MacOS/Hypertime --self-test   # headless AppKit smoke test
+dist/Hypertime.app/Contents/MacOS/Hypertime --screenshots docs/screenshots
+dist/Hypertime.app/Contents/MacOS/Hypertime --render-icon <dir>   # AppIcon.iconset
 ```
 
 `--self-test` exercises the status item, panel positioning and focus behaviour, the commit
@@ -34,8 +40,10 @@ non-zero on the first failure. Run it after touching anything in `Sources/Hypert
 - `Sources/HypertimeCore` — Foundation-only library (§3 of the plan).
 - `Sources/Hypertime/App` — AppDelegate, AppModel and the AppKit controllers.
 - `Sources/Hypertime/ViewModels` — `CheckInViewModel`, `ReportsViewModel`, `SettingsViewModel`.
-- `Sources/Hypertime/Views` — SwiftUI views; `Views/Components` holds the reusable pieces
-  (`EditableField` wraps `NSTextField` for the exact keyboard model in §6.4).
+- `Sources/Hypertime/Views` — SwiftUI views; `Views/Components` holds the design system
+  (`DesignTokens`, `GlassBackground`, `Chrome` for focus rings/buttons/shake, and
+  `EditableField`, which wraps `NSTextField` for the exact keyboard model in §6.4).
+- `docs/screenshots` — regenerated design-QA renders; see the README there for the two caveats.
 
 ## Environment
 macOS 15.7, Xcode 26.3, Swift 6.2. Core and tests build in Swift 6 language mode, the app

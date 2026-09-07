@@ -1,0 +1,288 @@
+import AppKit
+import SwiftUI
+
+/// Transcribed 1:1 from `docs/design-handoff/handoff/tokens.json` (Phase 2, §7.1).
+/// Views must never contain literal colours, sizes, radii or durations — everything lives here.
+enum Tokens {
+
+    // MARK: - Colour
+
+    /// Appearance-aware colour. Resolves light/dark and the Increase Contrast variants.
+    struct ThemedColor {
+        let light: NSColor
+        let dark: NSColor
+        let highContrastLight: NSColor
+        let highContrastDark: NSColor
+
+        init(_ light: String, _ dark: String, hcLight: String? = nil, hcDark: String? = nil) {
+            self.light = NSColor(hex: light)
+            self.dark = NSColor(hex: dark)
+            self.highContrastLight = NSColor(hex: hcLight ?? light)
+            self.highContrastDark = NSColor(hex: hcDark ?? dark)
+        }
+
+        var nsColor: NSColor {
+            NSColor(name: nil) { appearance in
+                switch appearance.bestMatch(from: [.aqua, .darkAqua,
+                                                   .accessibilityHighContrastAqua,
+                                                   .accessibilityHighContrastDarkAqua]) {
+                case .darkAqua: return self.dark
+                case .accessibilityHighContrastAqua: return self.highContrastLight
+                case .accessibilityHighContrastDarkAqua: return self.highContrastDark
+                default: return self.light
+                }
+            }
+        }
+
+        var color: Color { Color(nsColor: nsColor) }
+    }
+
+    enum Palette {
+        static let textPrimary = ThemedColor("#000000D9", "#FFFFFFEB", hcLight: "#000000", hcDark: "#FFFFFF")
+        static let textSecondary = ThemedColor("#00000080", "#FFFFFF8C", hcLight: "#000000B3", hcDark: "#FFFFFFBF")
+        static let textTertiary = ThemedColor("#00000059", "#FFFFFF66", hcLight: "#00000080", hcDark: "#FFFFFF99")
+        static let onAccent = ThemedColor("#FFFFFF", "#FFFFFF")
+        static let invalid = ThemedColor("#C93832", "#FF6961", hcLight: "#A62E29", hcDark: "#FF8A82")
+        static let destructive = ThemedColor("#C93832", "#FF6961")
+        static let success = ThemedColor("#28A745", "#30D158")
+        static let separator = ThemedColor("#00000017", "#FFFFFF1F", hcLight: "#00000033", hcDark: "#FFFFFF40")
+        static let strokeGlassTop = ThemedColor("#FFFFFFB3", "#FFFFFF29")
+        static let strokeGlassBottom = ThemedColor("#0000000D", "#0000004D")
+        static let fieldBackground = ThemedColor("#FFFFFF99", "#FFFFFF17")
+        static let rowHover = ThemedColor("#00000009", "#FFFFFF09")
+        static let trackingIndicator = ThemedColor("#28A745", "#30D158")
+        static let pausedIndicator = ThemedColor("#B08325", "#FFD60A")
+        static let idleIndicator = ThemedColor("#00000073", "#FFFFFF73")
+        static let invalidFieldBackground = ThemedColor("#FF453A21", "#FF453A2E")
+        static let autoHideDrain = ThemedColor("#00000038", "#FFFFFF42")
+
+        /// The design uses the system accent throughout; nothing depends on it being blue.
+        static var accent: Color { Color(nsColor: .controlAccentColor) }
+
+        /// `rowSelected`: accent@21% light / accent@29% dark.
+        static func rowSelected(_ scheme: ColorScheme) -> Color { accent.opacity(scheme == .dark ? 0.29 : 0.21) }
+        /// `todayColumn`: accent@10% light / accent@16% dark.
+        static func todayColumn(_ scheme: ColorScheme) -> Color { accent.opacity(scheme == .dark ? 0.16 : 0.10) }
+    }
+
+    // MARK: - Material
+
+    struct MaterialStyle {
+        let material: NSVisualEffectView.Material
+        let blending: NSVisualEffectView.BlendingMode
+        let tint: ThemedColor
+        let fallback: ThemedColor
+    }
+
+    enum Materials {
+        static let panel = MaterialStyle(material: .hudWindow, blending: .behindWindow,
+                                         tint: ThemedColor("#FFFFFF66", "#26262E99"),
+                                         fallback: ThemedColor("#F2F2F6", "#1E1E23"))
+        static let panelPassive = MaterialStyle(material: .hudWindow, blending: .behindWindow,
+                                                tint: ThemedColor("#FFFFFF40", "#26262E66"),
+                                                fallback: ThemedColor("#F2F2F6", "#1E1E23"))
+        static let window = MaterialStyle(material: .underWindowBackground, blending: .behindWindow,
+                                          tint: ThemedColor("#FAFAFDBF", "#2C2C34B8"),
+                                          fallback: ThemedColor("#F4F4F7", "#232329"))
+        static let popover = MaterialStyle(material: .popover, blending: .behindWindow,
+                                           tint: ThemedColor("#FCFCFFEB", "#32323ADD"),
+                                           fallback: ThemedColor("#FCFCFF", "#32323A"))
+        static let sheet = MaterialStyle(material: .sheet, blending: .withinWindow,
+                                         tint: ThemedColor("#FAFAFEDE", "#2E2E36D9"),
+                                         fallback: ThemedColor("#FAFAFE", "#2E2E36"))
+        /// Fields are not a material: a flat tint over whatever is behind them.
+        static let field = MaterialStyle(material: .hudWindow, blending: .withinWindow,
+                                         tint: ThemedColor("#FFFFFF99", "#FFFFFF17"),
+                                         fallback: ThemedColor("#FFFFFF", "#2A2A31"))
+    }
+
+    // MARK: - Type
+
+    struct FontToken {
+        enum Family { case text, display, rounded }
+        let family: Family
+        let size: CGFloat
+        let weight: NSFont.Weight
+        let tracking: CGFloat
+        let tabular: Bool
+
+        var nsFont: NSFont {
+            let base = NSFont.systemFont(ofSize: size, weight: weight)
+            var descriptor = base.fontDescriptor
+            if family == .rounded, let rounded = descriptor.withDesign(.rounded) {
+                descriptor = rounded
+            }
+            if tabular {
+                descriptor = descriptor.addingAttributes([
+                    .featureSettings: [[
+                        NSFontDescriptor.FeatureKey.typeIdentifier: kNumberSpacingType,
+                        NSFontDescriptor.FeatureKey.selectorIdentifier: kMonospacedNumbersSelector,
+                    ]]
+                ])
+            }
+            return NSFont(descriptor: descriptor, size: size) ?? base
+        }
+
+        var font: Font { Font(nsFont) }
+    }
+
+    enum Typography {
+        static let heading = FontToken(family: .text, size: 11, weight: .medium, tracking: 0, tabular: false)
+        static let body = FontToken(family: .text, size: 13, weight: .regular, tracking: 0, tabular: false)
+        static let caption = FontToken(family: .text, size: 10, weight: .regular, tracking: 0, tabular: false)
+        static let timeAdd = FontToken(family: .rounded, size: 26, weight: .medium, tracking: 0.3, tabular: true)
+        static let timeLarge = FontToken(family: .rounded, size: 28, weight: .medium, tracking: 0.3, tabular: true)
+        static let timeCell = FontToken(family: .text, size: 12, weight: .regular, tracking: 0, tabular: true)
+        static let listRow = FontToken(family: .text, size: 13, weight: .regular, tracking: 0, tabular: false)
+        static let listRowCurrent = FontToken(family: .text, size: 13, weight: .medium, tracking: 0, tabular: false)
+        static let periodTitle = FontToken(family: .display, size: 15, weight: .semibold, tracking: 0, tabular: false)
+        static let menuBarTime = FontToken(family: .text, size: 11.5, weight: .regular, tracking: 0, tabular: true)
+        static let keyboardHint = FontToken(family: .text, size: 10, weight: .regular, tracking: 0, tabular: false)
+    }
+
+    // MARK: - Metrics
+
+    enum Radius {
+        static let panel: CGFloat = 18
+        static let window: CGFloat = 12
+        static let sheet: CGFloat = 12
+        static let popover: CGFloat = 12
+        static let field: CGFloat = 10
+        static let button: CGFloat = 9
+        static let row: CGFloat = 8
+        static let cell: CGFloat = 6
+        static let chip: CGFloat = 12
+        static let kbdHint: CGFloat = 4
+    }
+
+    enum Space {
+        static let s1: CGFloat = 4
+        static let s2: CGFloat = 8
+        static let s3: CGFloat = 12
+        static let s4: CGFloat = 16
+        static let s5: CGFloat = 24
+    }
+
+    enum Size {
+        static let popupWidth: CGFloat = 380
+        static let popupWidthMax: CGFloat = 400
+        static let popupMinHeight: CGFloat = 150
+        static let popupMaxHeight: CGFloat = 320
+        static let fieldHeight: CGFloat = 30
+        static let buttonHeight: CGFloat = 28
+        static let listRowHeight: CGFloat = 28
+        static let dropdownRowHeight: CGFloat = 26
+        static let todayListMaxVisibleRows = 6
+        static let toolbarHeight: CGFloat = 52
+        static let reportsDefault = CGSize(width: 760, height: 540)
+        static let settingsWidth: CGFloat = 480
+        /// Header row and indicator dot, from the popup anatomy in HANDOFF.md.
+        static let headerHeight: CGFloat = 20
+        static let indicatorDot: CGFloat = 6
+        static let iconButton: CGFloat = 20
+        static let pausePopoverWidth: CGFloat = 240
+        static let autoHideDrainHeight: CGFloat = 2
+    }
+
+    struct ShadowToken {
+        let light: (color: NSColor, blur: CGFloat, y: CGFloat)
+        let dark: (color: NSColor, blur: CGFloat, y: CGFloat)
+
+        func color(_ scheme: ColorScheme) -> Color { Color(nsColor: scheme == .dark ? dark.color : light.color) }
+        /// SwiftUI blur radius is roughly half a design blur.
+        func radius(_ scheme: ColorScheme) -> CGFloat { (scheme == .dark ? dark.blur : light.blur) / 2 }
+        func y(_ scheme: ColorScheme) -> CGFloat { scheme == .dark ? dark.y : light.y }
+    }
+
+    enum Shadows {
+        static let panel = ShadowToken(light: (NSColor(hex: "#00000038"), 40, 12), dark: (NSColor(hex: "#0000008C"), 40, 12))
+        static let panelPassive = ShadowToken(light: (NSColor(hex: "#00000026"), 28, 8), dark: (NSColor(hex: "#00000066"), 28, 8))
+        static let popover = ShadowToken(light: (NSColor(hex: "#0000004D"), 48, 16), dark: (NSColor(hex: "#00000099"), 48, 16))
+        static let window = ShadowToken(light: (NSColor(hex: "#00000047"), 60, 20), dark: (NSColor(hex: "#00000080"), 60, 20))
+    }
+
+    // MARK: - Motion
+
+    struct MotionToken {
+        let duration: Double          // seconds
+        let curve: Animation
+
+        init(ms: Double, curve: Animation) {
+            self.duration = ms / 1000
+            self.curve = curve
+        }
+
+        /// Reduce Motion turns every animation into a 120 ms crossfade.
+        func animation(reduceMotion: Bool) -> Animation {
+            reduceMotion ? Motion.reduceMotionFallback.curve : curve
+        }
+    }
+
+    enum Motion {
+        static let popupAppearPassive = MotionToken(ms: 180, curve: .easeOut(duration: 0.18))
+        static let popupAppearFocused = MotionToken(ms: 180, curve: .easeOut(duration: 0.18))
+        static let popupDismiss = MotionToken(ms: 120, curve: .easeIn(duration: 0.12))
+        static let listOpen = MotionToken(ms: 160, curve: .easeOut(duration: 0.16))
+        static let highlightMove = MotionToken(ms: 90, curve: .easeOut(duration: 0.09))
+        static let digitTick = MotionToken(ms: 150, curve: .linear(duration: 0.15))
+        static let commit = MotionToken(ms: 250, curve: .easeOut(duration: 0.25))
+        static let invalidShake = MotionToken(ms: 300, curve: .easeInOut(duration: 0.3))
+        static let pauseCrossfade = MotionToken(ms: 200, curve: .easeInOut(duration: 0.2))
+        static let discard = MotionToken(ms: 250, curve: .easeIn(duration: 0.25))
+        /// The amount field collapses and clears before the panel dismisses (120 ms + 120 ms).
+        static let discardCollapse = MotionToken(ms: 120, curve: .easeIn(duration: 0.12))
+        static let autoHide = MotionToken(ms: 20000, curve: .linear(duration: 20))
+        static let reduceMotionFallback = MotionToken(ms: 120, curve: .linear(duration: 0.12))
+    }
+
+    // MARK: - Focus
+
+    enum Focus {
+        static let ringWidth: CGFloat = 3
+        static let rowRingWidth: CGFloat = 2.5
+        static let borderWidth: CGFloat = 0.5
+        /// Increase Contrast lifts the ring from 32 % to 50 %.
+        static func ringOpacity(_ increased: Bool) -> Double { increased ? 0.5 : 0.32 }
+        static func hairlineWidth(_ increased: Bool) -> CGFloat { increased ? 1 : 0.5 }
+    }
+
+    // MARK: - Icons
+
+    enum Icons {
+        static let pause = "pause.fill"
+        static let resume = "play.fill"
+        static let export = "square.and.arrow.up"
+        static let addProject = "plus"
+        static let navBack = "chevron.left"
+        static let navForward = "chevron.right"
+        static let dropdownChevron = "chevron.down"
+        static let settings = "gearshape"
+        static let reports = "chart.bar"
+        static let quit = "power"
+    }
+}
+
+extension NSColor {
+    /// `#RGB`, `#RRGGBB` or `#RRGGBBAA`.
+    convenience init(hex: String) {
+        var string = hex.trimmingCharacters(in: .whitespaces)
+        if string.hasPrefix("#") { string.removeFirst() }
+        if string.count == 3 { string = string.map { "\($0)\($0)" }.joined() }
+        if string.count == 6 { string += "FF" }
+        let value = UInt64(string, radix: 16) ?? 0xFF
+        self.init(srgbRed: CGFloat((value >> 24) & 0xFF) / 255,
+                  green: CGFloat((value >> 16) & 0xFF) / 255,
+                  blue: CGFloat((value >> 8) & 0xFF) / 255,
+                  alpha: CGFloat(value & 0xFF) / 255)
+    }
+}
+
+extension View {
+    func font(_ token: Tokens.FontToken) -> some View {
+        self.font(token.font).tracking(token.tracking)
+    }
+
+    func shadow(_ token: Tokens.ShadowToken, _ scheme: ColorScheme) -> some View {
+        self.shadow(color: token.color(scheme), radius: token.radius(scheme), y: token.y(scheme))
+    }
+}

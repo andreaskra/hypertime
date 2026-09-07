@@ -4,7 +4,7 @@ A glass-and-transparency menu-bar time tracker for macOS. It periodically asks
 "What are you working on?" in a tiny floating popup that never steals focus, is reachable
 with Cmd+Tab, and gets out of the way after one keystroke.
 
-Status: **Phase 1 complete** — the backbone works end to end behind a deliberately unstyled UI.
+Status: **Phase 2 complete** — the backbone works end to end behind the designed UI.
 
 - [docs/PLAN.md](docs/PLAN.md) — requirements, architecture, component specs, phased build plan
 - [docs/DESIGN_BRIEF.md](docs/DESIGN_BRIEF.md) — brief for the visual design (Claude Design)
@@ -25,8 +25,8 @@ AppKit layer and exits non-zero on failure.
 
 1. ~~Phase 0 — scaffolding (SwiftPM package, app bundle script)~~ done
 2. ~~Phase 1 — backbone + functional unstyled UI, fully tested core~~ done
-3. Phase 2 — UI rebuilt from the design handoff ← next
-4. Phase 3 — hardening and packaging
+3. ~~Phase 2 — UI rebuilt from the design handoff~~ done
+4. Phase 3 — hardening and packaging ← next
 
 Target: macOS 15+, Swift 6, SwiftUI + AppKit, SQLite via GRDB. Local-only for now.
 
@@ -39,3 +39,5 @@ Target: macOS 15+, Swift 6, SwiftUI + AppKit, SQLite via GRDB. Local-only for no
   across midnight, sleep, lock, pause and quit.
 - Reports for day / week / month / year with editable totals, CSV export, settings,
   login item and Cmd+Tab support.
+- Glass-and-transparency design from the handoff: tokenised colours, materials and motion,
+  with fallbacks for Reduce Transparency, Increase Contrast and Reduce Motion.
