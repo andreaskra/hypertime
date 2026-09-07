@@ -131,7 +131,7 @@ final class ReportsViewModel {
     }
 
     func delete(_ project: Project) {
-        if model.engine.currentProjectID == project.id { model.engine.stop() }
+        model.engine.projectDeleted(project.id)
         try? model.store.deleteProject(id: project.id)
         reload()
     }

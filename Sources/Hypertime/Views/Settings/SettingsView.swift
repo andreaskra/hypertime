@@ -68,6 +68,12 @@ struct SettingsView: View {
                     .font(Tokens.Typography.caption)
                     .foregroundStyle(Tokens.Palette.textTertiary.color)
                     .textSelection(.enabled)
+                if let recovered = viewModel.recoveredDatabasePath {
+                    Text("The previous database could not be read and was moved to \(recovered).")
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.invalid.color)
+                        .textSelection(.enabled)
+                }
             }
         }
         .formStyle(.grouped)

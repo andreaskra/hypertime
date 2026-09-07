@@ -10,6 +10,9 @@ enum SelfTest {
     static func run(model: AppModel, statusItem: StatusItemController, panel: CheckInPanelController) {
         let viewModel = panel.viewModel
 
+        let launchMilliseconds = Date().timeIntervalSince(AppDelegate.launchDate) * 1000
+        check("status item is ready within 300 ms of launch", launchMilliseconds < 300,
+              String(format: "%.0f ms", launchMilliseconds))
         check("status item button exists", statusItem.button != nil)
         check("status item has a template image", statusItem.button?.image?.isTemplate == true)
         check("menu bar glyphs are 18×18 templates", [MenuBarGlyph.State.idle, .tracking, .paused].allSatisfy {

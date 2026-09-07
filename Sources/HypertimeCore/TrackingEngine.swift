@@ -127,6 +127,23 @@ public final class TrackingEngine {
         start(projectID: projectID)
     }
 
+    /// The project is about to be deleted: drop any time attributed to it and stop tracking it.
+    /// Its pending bucket is discarded rather than committed — the entries go away with it.
+    public func projectDeleted(_ projectID: UUID) {
+        if pending?.projectID == projectID {
+            pending = nil
+            fraction = 0
+            lastCommitAt = clock.now()
+        }
+        if currentProjectID == projectID {
+            currentProjectID = nil
+            setStatus(.idle)
+        } else {
+            persist(force: true)
+        }
+        broadcaster.send(.dataChanged)
+    }
+
     /// Flushes pending time and goes idle (quit, R-15).
     public func stop() {
         autoCommitPending()

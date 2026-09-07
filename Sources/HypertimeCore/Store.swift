@@ -7,6 +7,10 @@ public enum StoreError: Error, Equatable, Sendable {
     case notFound
 }
 
+/// Longest project name we store. Anything longer is truncated on the way in, so a stray paste
+/// can not produce a name that breaks layout or queries (Phase 3).
+public let maxProjectNameLength = 200
+
 public enum StoreChange: String, Sendable, Hashable, CaseIterable {
     case projects
     case entries
@@ -70,9 +74,13 @@ public final class Store: @unchecked Sendable {
 
     public let path: String
 
+    /// Set when the database on disk could not be opened and was moved aside; holds the path of
+    /// the quarantined copy so the user can be told where their old data went.
+    public private(set) var recoveredFromCorruption: String?
+
     // MARK: - Lifecycle
 
-    public init(path: String, clock: Clock) throws {
+    public init(path: String, clock: Clock, recoverFromCorruption: Bool = true) throws {
         self.path = path
         self.clock = clock
         if path != ":memory:" {
@@ -83,9 +91,47 @@ public final class Store: @unchecked Sendable {
         }
         var config = Configuration()
         config.foreignKeysEnabled = true
-        self.dbQueue = try DatabaseQueue(path: path, configuration: config)
-        try Self.migrator.migrate(dbQueue)
+
+        do {
+            self.dbQueue = try Self.open(path: path, config: config)
+        } catch {
+            // A missing file is created by GRDB; getting here means it exists and is unusable.
+            guard recoverFromCorruption, path != ":memory:" else { throw error }
+            self.recoveredFromCorruption = Self.quarantine(path: path, clock: clock)
+            self.dbQueue = try Self.open(path: path, config: config)
+        }
         try pruneChangeLog()
+    }
+
+    private static func open(path: String, config: Configuration) throws -> DatabaseQueue {
+        let queue = try DatabaseQueue(path: path, configuration: config)
+        try migrator.migrate(queue)
+        // Migrations succeed on a file that is only partly readable; force a real read too.
+        try queue.read { db in _ = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM project") }
+        return queue
+    }
+
+    /// Moves an unusable database (and its sidecar files) aside. Returns the new path.
+    private static func quarantine(path: String, clock: Clock) -> String? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        formatter.timeZone = clock.timeZone
+        let stamp = formatter.string(from: clock.now())
+        let base = (path as NSString).deletingPathExtension
+        let ext = (path as NSString).pathExtension
+        let target = "\(base)-corrupt-\(stamp)" + (ext.isEmpty ? "" : ".\(ext)")
+
+        let manager = FileManager.default
+        do {
+            try? manager.removeItem(atPath: target)
+            try manager.moveItem(atPath: path, toPath: target)
+        } catch {
+            return nil
+        }
+        for suffix in ["-wal", "-shm"] {
+            try? manager.removeItem(atPath: path + suffix)
+        }
+        return target
     }
 
     public static func inMemory(clock: Clock) throws -> Store {
@@ -154,8 +200,15 @@ public final class Store: @unchecked Sendable {
         }
     }
 
-    public func project(named name: String) throws -> Project? {
+    /// Trims and caps a name the way `findOrCreateProject` stores it.
+    public static func normalise(name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > maxProjectNameLength else { return trimmed }
+        return String(trimmed.prefix(maxProjectNameLength))
+    }
+
+    public func project(named name: String) throws -> Project? {
+        let trimmed = Self.normalise(name: name)
         guard !trimmed.isEmpty else { return nil }
         if let found = try dbQueue.read({ db in
             try Row.fetchOne(db, sql: "SELECT * FROM project WHERE name = ? COLLATE NOCASE", arguments: [trimmed])
@@ -172,7 +225,7 @@ public final class Store: @unchecked Sendable {
 
     @discardableResult
     public func findOrCreateProject(named name: String) throws -> Project {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = Self.normalise(name: name)
         guard !trimmed.isEmpty else { throw StoreError.emptyName }
         if let existing = try project(named: trimmed) { return existing }
 
@@ -190,7 +243,7 @@ public final class Store: @unchecked Sendable {
     }
 
     public func renameProject(id: UUID, to name: String) throws {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = Self.normalise(name: name)
         guard !trimmed.isEmpty else { throw StoreError.emptyName }
         if let clash = try project(named: trimmed), clash.id != id { throw StoreError.duplicateName(trimmed) }
         try write(.projects) { db in

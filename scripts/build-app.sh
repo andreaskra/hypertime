@@ -6,6 +6,9 @@ cd "$(dirname "$0")/.."
 CONFIG="${CONFIG:-release}"
 APP="dist/Hypertime.app"
 RESOURCES="Sources/Hypertime/Resources"
+# Ad-hoc by default; scripts/release.sh passes a Developer ID plus hardened-runtime options.
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+SIGN_OPTIONS="${SIGN_OPTIONS:-}"
 
 swift build -c "$CONFIG" --product Hypertime
 BIN_PATH="$(swift build -c "$CONFIG" --show-bin-path)"
@@ -30,7 +33,10 @@ else
 fi
 rm -rf "$ICON_WORK"
 
-codesign --force --sign - --entitlements "$RESOURCES/Hypertime.entitlements" "$APP" 2>/dev/null
+# shellcheck disable=SC2086
+codesign --force --sign "$SIGN_IDENTITY" $SIGN_OPTIONS \
+  --entitlements "$RESOURCES/Hypertime.entitlements" "$APP"
+codesign --verify --strict "$APP"
 
 echo "Built $APP"
 case "$(cd "$(dirname "$APP")" && pwd)" in

@@ -5,9 +5,10 @@ assumptions (A-xx), component specs, and the phase plan with acceptance checklis
 `docs/DESIGN_BRIEF.md` describes the design handoff that Phase 2 consumes.
 `docs/DECISIONS.md` records every decision that refines or deviates from the plan.
 
-Status: **Phase 2 complete** (visual design applied). The handoff lives in
-`docs/design-handoff/handoff/` (`tokens.json`, `HANDOFF.md`, SVG assets). Phase 3 (hardening
-and packaging) is next.
+Status: **Phases 0–3 complete.** The design handoff lives in `docs/design-handoff/handoff/`
+(`tokens.json`, `HANDOFF.md`, SVG assets). What is still open is listed at the bottom of
+`docs/DECISIONS.md`: the manual checklist items that need a person at the keyboard, and the
+artboard-drift pass (the artboards were not part of the handoff zip).
 
 ## Rules
 - `Sources/HypertimeCore` must not import AppKit or SwiftUI. Everything in it is tested with `swift test`.
@@ -22,11 +23,12 @@ and packaging) is next.
 ## Commands
 ```bash
 swift build
-swift test                              # 89 tests, swift-testing (import Testing)
+swift test                              # 101 tests, swift-testing (import Testing)
 swift test --enable-code-coverage
 scripts/build-app.sh                    # -> dist/Hypertime.app (ad-hoc signed)
 scripts/run.sh                          # kills running instance, builds, opens
 scripts/run.sh --seed-demo              # separate demo database (6 projects, 90 days)
+scripts/release.sh                      # signed .app + .zip + .dmg (add --notarize to submit)
 dist/Hypertime.app/Contents/MacOS/Hypertime --self-test   # headless AppKit smoke test
 dist/Hypertime.app/Contents/MacOS/Hypertime --screenshots docs/screenshots
 dist/Hypertime.app/Contents/MacOS/Hypertime --render-icon <dir>   # AppIcon.iconset

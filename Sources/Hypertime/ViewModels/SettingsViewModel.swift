@@ -28,6 +28,8 @@ final class SettingsViewModel {
     var loginItemNeedsApproval: Bool { LoginItemController.requiresApproval }
     var isInApplicationsFolder: Bool { LoginItemController.isInApplicationsFolder }
     var databasePath: String { model.store.path }
+    /// Non-nil when this launch had to replace an unreadable database.
+    var recoveredDatabasePath: String? { model.store.recoveredFromCorruption }
 
     init(model: AppModel) {
         self.model = model

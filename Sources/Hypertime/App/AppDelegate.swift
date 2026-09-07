@@ -20,7 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// True until the launch activation has been consumed, so it is not mistaken for Cmd+Tab.
     private var isLaunching = true
 
+    /// Process start, used for the launch-time budget (< 300 ms to the status item).
+    static let launchDate = NSRunningApplication.current.launchDate ?? Date()
+
     static func main() {
+        _ = launchDate                      // pin the measurement to process start
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -56,6 +60,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LoginItemController.synchronise(settings: model.settings)
         model.start()
 
+        let launchMilliseconds = Date().timeIntervalSince(Self.launchDate) * 1000
+        Log.app.notice("Status item ready \(launchMilliseconds, format: .fixed(precision: 0)) ms after launch")
+        if let quarantined = model.store.recoveredFromCorruption {
+            reportDatabaseRecovery(quarantined)
+        }
+
         if let index = CommandLine.arguments.firstIndex(of: "--render-icon"),
            index + 1 < CommandLine.arguments.count {
             exit(IconRenderer.run(directory: CommandLine.arguments[index + 1]) ? 0 : 1)
@@ -76,6 +86,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.show(mode: .passive)
         DispatchQueue.main.async { [weak self] in self?.isLaunching = false }
         Log.app.info("Launched")
+    }
+
+    /// The database could not be opened and was replaced. Rare and destructive enough to be worth
+    /// interrupting for — routine errors stay inline (§9).
+    private func reportDatabaseRecovery(_ quarantinedPath: String) {
+        Log.store.error("Recovered from an unreadable database; old file at \(quarantinedPath, privacy: .public)")
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Hypertime started with a new database."
+        alert.informativeText = "The existing database could not be read, so it was moved aside and a new one was created. "
+            + "Your previous file is still on disk:\n\n" + quarantinedPath
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Show in Finder")
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: quarantinedPath)])
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
