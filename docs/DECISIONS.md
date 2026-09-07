@@ -46,3 +46,18 @@ Append-only. One entry per decision that refines or deviates from `PLAN.md`.
 | 2026-09-07 | Phase 3 | The release script was verified end to end in `--adhoc` mode only. The Developer ID path is untested here: signing with the user's certificate and submitting to Apple are their calls to make. | Signing and notarising are outward-facing actions. |
 | 2026-09-07 | Phase 3 | `docs/SYNC.md` documents the `change_log` contract and names what is still missing for real sync (origin column, tombstones for cascades, conflict rules, device identity). No sync code was written. | The plan asks for a readiness note, not an implementation. |
 
+
+## Still open
+
+Everything in `PLAN.md` has been built. What remains needs a person, not more code:
+
+- **Manual checklist (Phase 1, §7).** The items that cannot be driven from an agent shell:
+  R-08/R-09/R-10 focus behaviour with another app frontmost, D-14 hover cancelling the
+  auto-hide, A-01 lid close or screen lock, R-16 login item registered from `/Applications`,
+  popup placement on a second display, and how the live glass reads with Reduce Transparency on.
+  Everything else in that checklist is covered by `swift test` (101) and `--self-test` (28).
+- **Artboard drift pass (Phase 2, §7.7).** `Hypertime UI Concept v2.dc.html` was not in the
+  handoff zip, so Phase 2 was built against `HANDOFF.md` and `tokens.json`. The renders in
+  `docs/screenshots/` are ready to diff against the artboards once they are available.
+- **Developer ID release.** `scripts/release.sh` was verified in `--adhoc` mode. Signing with
+  the installed Developer ID certificate and running `--notarize` are the owner's calls.
