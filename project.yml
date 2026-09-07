@@ -1,0 +1,61 @@
+# Optional XcodeGen project for debugging the app in Xcode (Phase 0, §7).
+#   brew install xcodegen && xcodegen generate && open Hypertime.xcodeproj
+# SwiftPM stays the source of truth (D-03); this file is regenerated, never edited by hand.
+# Not verified on this machine — XcodeGen is not installed here.
+name: Hypertime
+options:
+  minimumXcodeGenVersion: "2.38"
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: "7.0.0"
+targets:
+  HypertimeCore:
+    type: framework
+    platform: macOS
+    sources:
+      - path: Sources/HypertimeCore
+    dependencies:
+      - package: GRDB
+        product: GRDB
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.hypertime.core
+  Hypertime:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Hypertime
+        excludes:
+          - Resources/Info.plist
+          - Resources/Hypertime.entitlements
+    dependencies:
+      - target: HypertimeCore
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.hypertime.app
+        INFOPLIST_FILE: Sources/Hypertime/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/Hypertime/Resources/Hypertime.entitlements
+        CODE_SIGN_IDENTITY: "-"
+  HypertimeCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/HypertimeCoreTests
+    dependencies:
+      - target: HypertimeCore
+schemes:
+  Hypertime:
+    build:
+      targets:
+        Hypertime: all
+        HypertimeCoreTests: [test]
+    run:
+      config: Debug
+    test:
+      targets: [HypertimeCoreTests]

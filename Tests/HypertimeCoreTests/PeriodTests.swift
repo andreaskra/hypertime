@@ -151,6 +151,31 @@ struct PeriodTests {
                 == "Week 1 · 29 Dec 2025–4 Jan 2026")
     }
 
+    @Test("kind and sameKind")
+    func kinds() {
+        #expect(Period.day(d("2026-09-07")).kind == .day)
+        #expect(Period.week(isoYear: 2026, isoWeek: 37).kind == .week)
+        #expect(Period.month(year: 2026, month: 9).kind == .month)
+        #expect(Period.year(2026).kind == .year)
+        #expect(Period.containing(d("2026-09-07"), kind: .day, calendar: cal, weekStart: .monday) == .day(d("2026-09-07")))
+        #expect(Period.containing(d("2026-09-07"), kind: .month, calendar: cal, weekStart: .monday) == .month(year: 2026, month: 9))
+        #expect(Period.containing(d("2026-09-07"), kind: .year, calendar: cal, weekStart: .monday) == .year(2026))
+        #expect(Period.month(year: 2026, month: 9).sameKind(containing: d("2026-11-02"), calendar: cal, weekStart: .monday)
+                == .month(year: 2026, month: 11))
+    }
+
+    @Test("short titles and a month-spanning week title")
+    func shortTitles() {
+        let locale = Locale(identifier: "en_GB")
+        #expect(Period.day(d("2026-09-07")).shortTitle(calendar: cal, weekStart: .monday, locale: locale) == "Mon 7 Sep")
+        #expect(Period.week(isoYear: 2026, isoWeek: 37).shortTitle(calendar: cal, weekStart: .monday, locale: locale) == "W37")
+        #expect(Period.month(year: 2026, month: 9).shortTitle(calendar: cal, weekStart: .monday, locale: locale) == "Sep 2026")
+        #expect(Period.year(2026).shortTitle(calendar: cal, weekStart: .monday, locale: locale) == "2026")
+        // A week spanning two months inside one year.
+        #expect(Period.week(isoYear: 2026, isoWeek: 40).title(calendar: cal, weekStart: .monday, locale: locale)
+                == "Week 40 · 28 Sep–4 Oct 2026")
+    }
+
     @Test("contains")
     func contains() {
         let p = Period.month(year: 2026, month: 9)
