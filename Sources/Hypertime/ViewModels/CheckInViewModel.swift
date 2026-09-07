@@ -152,7 +152,7 @@ final class CheckInViewModel {
         }) {
             highlighted = index
         } else {
-            highlighted = rows.isEmpty ? 0 : 0
+            highlighted = 0
         }
     }
 

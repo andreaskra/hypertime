@@ -25,9 +25,8 @@ enum DemoData {
             }
         }
 
-        for (index, project) in projects.enumerated() {
+        for project in projects {
             try store.touchProject(id: project.id)
-            _ = index
         }
     }
 }

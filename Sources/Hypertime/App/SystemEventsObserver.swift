@@ -36,10 +36,11 @@ final class SystemEventsObserver {
     }
 
     deinit {
-        let tokens = self.tokens
-        NSWorkspace.shared.notificationCenter.performSelector(onMainThread: #selector(NotificationCenter.removeObserver(_:)),
-                                                             with: nil, waitUntilDone: false)
-        _ = tokens
+        for token in tokens {
+            NotificationCenter.default.removeObserver(token)
+            NSWorkspace.shared.notificationCenter.removeObserver(token)
+            DistributedNotificationCenter.default().removeObserver(token)
+        }
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handler: @escaping () -> Void) {
