@@ -25,32 +25,32 @@ struct CheckInView: View {
                 header
 
                 ProjectField(viewModel: viewModel)
+                    // The dropdown hangs off the field it filters, one gap below it, so the two
+                    // read as a single combobox. It covers whatever is beneath — the amount is
+                    // back the moment the list closes.
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("panel")).maxY } action: {
+                        presentation.reportListTop($0 + Tokens.Space.s1)
+                    }
 
                 AmountField(viewModel: viewModel, presentation: presentation)
-                    // The dropdown hangs below the amount, so what you are about to add stays
-                    // readable while you pick the project it goes to.
-                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("panel")).maxY } action: {
-                        presentation.reportListTop($0 + Tokens.Space.s3)
-                    }
 
-                if hasTodayList || viewModel.showsProjectList {
+                if hasTodayList {
                     VStack(alignment: .leading, spacing: Tokens.Space.s3) {
-                        if hasTodayList {
-                            Hairline()
-                            TodayListView(viewModel: viewModel)
-                                // The dropdown owns the keyboard while it is open; the list steps back.
-                                .opacity(viewModel.showsProjectList ? 0.45 : 1)
-                                .allowsHitTesting(!viewModel.showsProjectList)
-                        }
+                        Hairline()
+                        TodayListView(viewModel: viewModel)
+                            // The dropdown owns the keyboard while it is open; the list steps back.
+                            .opacity(viewModel.showsProjectList ? 0.45 : 1)
+                            .allowsHitTesting(!viewModel.showsProjectList)
                     }
-                    // While the dropdown is open the list area reserves its height, so the
-                    // buttons move down instead of being covered.
-                    .frame(maxWidth: .infinity,
-                           minHeight: viewModel.showsProjectList ? dropdownHeight : 0,
-                           alignment: .top)
                 }
 
                 buttons
+                    // Short panel, long list: push the actions clear instead of letting the
+                    // dropdown bury them. The panel grows with them (it only ever grows down).
+                    .padding(.top, dropdownClearance)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("panel")).minY } action: { top in
+                        if !viewModel.showsProjectList { presentation.reportButtonsTop(top) }
+                    }
             }
             .padding(Tokens.Space.s4)
 
@@ -80,6 +80,14 @@ struct CheckInView: View {
     private var hasTodayList: Bool { !viewModel.todayRows.isEmpty || viewModel.isTracking }
 
     private var dropdownHeight: CGFloat { ProjectList.height(rows: viewModel.matches.count) }
+
+    /// How far the buttons have to move so an open dropdown does not cover them. Zero whenever
+    /// the content below the field is already taller than the list, which is the usual case.
+    private var dropdownClearance: CGFloat {
+        guard viewModel.showsProjectList, presentation.buttonsTop > 0 else { return 0 }
+        let dropdownBottom = presentation.listTop + dropdownHeight + Tokens.Space.s3
+        return max(0, dropdownBottom - presentation.buttonsTop)
+    }
 
     /// Focused popups scale in from 0.98; passive ones only fade and slide.
     private var scaleWhileHidden: CGFloat {

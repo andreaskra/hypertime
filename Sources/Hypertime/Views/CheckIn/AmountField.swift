@@ -60,6 +60,11 @@ struct AmountField: View {
 
     private var caption: String {
         if viewModel.timeFieldInvalid { return "Try 1:30 or 90m" }
+        // While the field holds an entry ↩ has not taken yet, the next press sets the amount
+        // rather than saving — and the line has to say the thing the key will actually do.
+        if isFocused && !viewModel.isTimeAccepted {
+            return "since last check-in · ↩ sets the amount"
+        }
         let name = viewModel.effectiveName.isEmpty ? viewModel.currentProjectName : viewModel.effectiveName
         guard let name else { return "since last check-in · ↩ starts tracking" }
         let verb = viewModel.isPaused ? "adds it and resumes" : "adds it to"
@@ -69,6 +74,9 @@ struct AmountField: View {
     private func handle(_ selector: Selector, _ modifiers: NSEvent.ModifierFlags) -> Bool {
         switch selector {
         case .insertNewline:
+            // First ↩ takes the amount and normalises it; a second commits the popup, so what
+            // gets saved is a number the user has actually seen.
+            if viewModel.acceptTimeEntry() { return true }
             viewModel.commit()
             return true
         case .cancelOperation:

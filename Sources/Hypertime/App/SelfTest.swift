@@ -43,10 +43,27 @@ enum SelfTest {
         viewModel.projectTextChanged("self")
         check("typing filters the list", viewModel.matches.contains { $0.name == "Self Test" })
         check("typing opens the dropdown", viewModel.showsProjectList)
-        check("dropdown hangs below the amount field", panel.presentation.listTop > 60,
+        // The dropdown belongs to the field it filters: it opens directly under the project
+        // field and overlaps the amount, rather than floating a field and a caption away.
+        check("dropdown hangs off the project field", panel.presentation.listTop > 60,
               "\(panel.presentation.listTop)")
-        check("panel grows to fit an open dropdown",
+        check("dropdown starts above the amount field it covers",
+              panel.presentation.listTop < 120, "\(panel.presentation.listTop)")
+        check("panel is tall enough for an open dropdown",
               panel.presentation.requiredHeight >= panel.presentation.listTop + panel.presentation.dropdownHeight)
+
+        // ↩ with the list open belongs to the list (R-11): it takes the highlighted row and
+        // closes it, rather than committing the popup past a list still being read.
+        let highlightedName = viewModel.highlightedRow?.name ?? ""
+        check("↩ with the dropdown open is consumed by the dropdown", viewModel.acceptHighlightedRow())
+        check("…which closes the list rather than the popup",
+              !viewModel.showsProjectList && panel.isVisible)
+        check("…and does not commit", model.engine.pendingSeconds == 0)
+        check("…puts the highlighted row in the field", viewModel.fieldText == highlightedName,
+              "\(viewModel.fieldText) vs \(highlightedName)")
+        check("…and clears the filter, so reopening shows every project",
+              viewModel.query.isEmpty && viewModel.matches.count >= (try? model.store.projects().count) ?? 0)
+        check("↩ with no dropdown open is left to the popup", !viewModel.acceptHighlightedRow())
 
         viewModel.closeProjectList()
         check("dropdown closes without closing the popup", !viewModel.showsProjectList && panel.isVisible)
@@ -61,6 +78,30 @@ enum SelfTest {
         viewModel.projectTextChanged("self")
         viewModel.focus = .time
         check("leaving the project field closes the dropdown", !viewModel.showsProjectList)
+
+        // The first ↩ in the time field takes the time: typing "90m" and pressing once used to
+        // save an amount the user had never seen rendered.
+        viewModel.timeTextChanged("90m")
+        check("↩ in the time field is consumed by the field", viewModel.acceptTimeEntry())
+        check("…and normalises what was typed", viewModel.timeText == "1:30:00", viewModel.timeText)
+        check("…without committing", panel.isVisible)
+        check("a second ↩ is left to the popup", !viewModel.acceptTimeEntry())
+        check("editing again puts the two steps back", {
+            viewModel.timeTextChanged("45m")
+            return viewModel.acceptTimeEntry() && viewModel.timeText == "0:45:00"
+        }(), viewModel.timeText)
+        check("an unparsable amount is reported rather than committed", {
+            viewModel.timeTextChanged("nonsense")
+            return viewModel.acceptTimeEntry() && viewModel.timeFieldInvalid
+        }())
+        check("leaving the field puts the two steps back", {
+            viewModel.timeTextChanged("0:30:00")
+            _ = viewModel.acceptTimeEntry()
+            viewModel.focus = .project
+            viewModel.focus = .time
+            return !viewModel.isTimeAccepted
+        }())
+        viewModel.timeTextChanged("")
         viewModel.focus = .project
         check("create row comes first for an unknown name", {
             viewModel.projectTextChanged("brand new thing")

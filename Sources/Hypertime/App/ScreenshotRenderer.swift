@@ -88,10 +88,18 @@ enum ScreenshotRenderer {
             emptyCheckIn.prepareForShow()
             render("popup-empty", AnyView(CheckInView(viewModel: emptyCheckIn, presentation: presentation)), in: url)
 
-            for name in ["Hypertime", "Client · Müller", "Admin", "Design System", "Sales calls", "Learning", "Support"] {
-                if let project = try? empty.store.findOrCreateProject(named: name) {
-                    try? empty.store.setSeconds(project: project.id, day: empty.today, Int.random(in: 12...220) * 60)
-                }
+            let names = ["Hypertime", "Client · Müller", "Admin", "Design System", "Sales calls", "Learning", "Support"]
+            let projects = names.compactMap { try? empty.store.findOrCreateProject(named: $0) }
+
+            // Worst case for the overlay: projects to choose from, but nothing tracked today, so
+            // the panel is at its shortest while the dropdown is at its tallest.
+            emptyCheckIn.prepareForShow()
+            emptyCheckIn.focus = .project
+            emptyCheckIn.projectTextChanged("e")
+            render("popup-dropdown-short", AnyView(CheckInView(viewModel: emptyCheckIn, presentation: presentation)), in: url)
+
+            for project in projects {
+                try? empty.store.setSeconds(project: project.id, day: empty.today, Int.random(in: 12...220) * 60)
             }
             emptyCheckIn.prepareForShow()
             emptyCheckIn.timeText = "0:12:34"

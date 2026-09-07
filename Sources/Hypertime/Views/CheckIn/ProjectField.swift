@@ -60,6 +60,9 @@ struct ProjectField: View {
             viewModel.moveSelection(by: 1)
             return true
         case .insertNewline:
+            // With the list open, ↩ is the list's: it takes the highlighted row and closes it.
+            // Only once there is no list in the way does ↩ mean "commit the popup".
+            if viewModel.acceptHighlightedRow() { return true }
             viewModel.commit()
             return true
         case .cancelOperation:

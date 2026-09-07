@@ -23,13 +23,19 @@ final class PanelPresentation {
     var isConfirming = false
 
     var contentHeight: CGFloat = Tokens.Size.popupMinHeight
-    /// Y of the today-list section in panel coordinates: where the dropdown is anchored, so the
-    /// amount stays visible while a project is being picked.
+    /// Y of the dropdown's top edge in panel coordinates — just under the project field it
+    /// filters, so the two read as one combobox. It overlaps the amount and the today list
+    /// rather than displacing them.
     var listTop: CGFloat = 120
     var dropdownHeight: CGFloat = 0
+    /// Y of the button row, measured only while the dropdown is closed — so the space reserved
+    /// for an open dropdown can never feed back into its own measurement.
+    var buttonsTop: CGFloat = 0
 
     var onHeightRequest: ((CGFloat) -> Void)?
 
+    /// The window only grows when an open dropdown would not otherwise fit: with a today list
+    /// of any length the list already ends above the buttons, so opening it resizes nothing.
     var requiredHeight: CGFloat {
         let dropdownBottom = dropdownHeight > 0 ? listTop + dropdownHeight + Tokens.Space.s4 : 0
         return max(contentHeight, dropdownBottom)
@@ -45,6 +51,11 @@ final class PanelPresentation {
         guard abs(value - listTop) > 0.5 else { return }
         listTop = value
         onHeightRequest?(requiredHeight)
+    }
+
+    func reportButtonsTop(_ value: CGFloat) {
+        guard abs(value - buttonsTop) > 0.5 else { return }
+        buttonsTop = value
     }
 
     func reportDropdownHeight(_ value: CGFloat) {

@@ -52,6 +52,11 @@ final class CheckInViewModel {
     var timeText = ""
     var isEditingTime = false
     var timeFieldInvalid = false
+    /// Whether ↩ has already taken what is in the time field. The first ↩ normalises the entry
+    /// ("90m" → "1:30:00") and stops there; only a second one commits the popup, so a typo is
+    /// visible as a number before it becomes a saved entry. Reset by anything that changes the
+    /// value, and by leaving the field.
+    var isTimeAccepted = false
 
     // Today list
     var todayRows: [ReportRow] = []
@@ -59,7 +64,12 @@ final class CheckInViewModel {
 
     // Chrome
     var focus: CheckInFocus = .none {
-        didSet { if focus != .project { isProjectListOpen = false } }
+        didSet {
+            if focus != .project { isProjectListOpen = false }
+            // Leaving the field forgets that ↩ had taken its value: coming back should show the
+            // same two steps as arriving the first time, not commit on the first press.
+            if focus != .time { isTimeAccepted = false }
+        }
     }
     var statusLine = ""
     var todayTotalText = ""
@@ -215,6 +225,16 @@ final class CheckInViewModel {
         matches.indices.contains(highlighted) ? matches[highlighted] : nil
     }
 
+    /// ↩ with the dropdown open belongs to the dropdown: it takes the highlighted row and closes
+    /// the list, exactly as clicking it does, rather than committing the popup past a list the
+    /// user is still reading. Returns true when the press was consumed; with no list open the
+    /// caller commits as before.
+    func acceptHighlightedRow() -> Bool {
+        guard showsProjectList, matches.indices.contains(highlighted) else { return false }
+        selectRow(highlighted)
+        return true
+    }
+
     /// The name a commit would use: the field text, which arrow keys keep in sync with the list.
     var effectiveName: String {
         fieldText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -241,6 +261,7 @@ final class CheckInViewModel {
     func timeTextChanged(_ text: String) {
         timeText = text
         timeFieldInvalid = false
+        isTimeAccepted = false
         // Clearing the field hands the display back to the live counter (§6.4).
         isEditingTime = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if !isEditingTime { refreshTime() }
@@ -253,6 +274,25 @@ final class CheckInViewModel {
         isEditingTime = true
         timeText = model.formatter.string(updated, style: .clock)
         timeFieldInvalid = false
+        isTimeAccepted = false
+    }
+
+    /// The first ↩ in the time field takes the time, not the popup. Typing "90m" and pressing
+    /// once used to save an amount the user had never seen rendered; now the first press
+    /// normalises it to "1:30:00" on screen and the second commits. Returns true when the press
+    /// was consumed here.
+    func acceptTimeEntry() -> Bool {
+        guard !isTimeAccepted else { return false }
+        guard let seconds = try? model.parser.parseAbsolute(timeText) else {
+            // A press that reports an error is still a press this field handled: falling through
+            // to commit() would show the same complaint twice over.
+            timeFieldInvalid = true
+            return true
+        }
+        timeText = model.formatter.string(seconds, style: .clock)
+        isEditingTime = true
+        isTimeAccepted = true
+        return true
     }
 
     // MARK: - Commands
