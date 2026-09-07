@@ -332,6 +332,37 @@ final class CheckInViewModel {
         onPauseRequested?()
     }
 
+    /// The header control: pause while tracking, resume while paused, start when idle. Idle is
+    /// the state the popup opens in after a launch or a quit, so it needs a way back in that is
+    /// not "confirm some amount of time".
+    func toggleTracking() {
+        if isPaused {
+            resume()
+        } else if isTracking {
+            requestPause()
+        } else {
+            guard model.startTracking(name: effectiveName) else {
+                focus = .project
+                return
+            }
+            refreshStatus()
+            refreshRows()
+            refreshTime()
+        }
+    }
+
+    /// Nothing to start when no project is named and none is current.
+    var canToggleTracking: Bool {
+        isTracking || isPaused || !effectiveName.isEmpty
+    }
+
+    var trackingToggleHelp: String {
+        if isPaused { return "Resume tracking" }
+        if isTracking { return "Pause tracking" }
+        let name = effectiveName
+        return name.isEmpty ? "Start tracking" : "Start tracking \(name)"
+    }
+
     func resume() {
         model.engine.resume()
         refreshStatus()

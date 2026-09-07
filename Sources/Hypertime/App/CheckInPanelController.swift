@@ -64,8 +64,9 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     /// True once the user has clicked or Cmd+Tabbed into the panel; only then do we hand focus back.
     private var didEngage = false
 
-    /// Supplies the status item button for positioning.
-    var anchorProvider: (() -> NSStatusBarButton?)?
+    /// Where to hang the panel: the status item's screen frame, or nil while it has no place in
+    /// the menu bar (not yet laid out at launch, or pushed into the overflow).
+    var anchorProvider: (() -> NSRect?)?
     var onPauseRequested: ((NSView) -> Void)?
 
     var isVisible: Bool { panel.isVisible }
@@ -304,11 +305,13 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         let screen = anchorScreen()
         var origin: NSPoint
 
-        if let button = anchorProvider?(), let window = button.window, window.screen != nil {
-            let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
-            origin = NSPoint(x: anchor.midX - size.width / 2, y: anchor.minY - 6 - size.height)
+        if let anchor = anchorProvider?() {
+            // Centred on the item, 6 pt below the menu bar (§6.3) — the item sits centred inside
+            // the menu bar, so its own bottom edge is a few points higher than the bar's.
+            origin = NSPoint(x: anchor.midX - size.width / 2,
+                             y: screen.visibleFrame.maxY - 6 - size.height)
         } else {
-            // Status item hidden in the menu bar overflow: fall back to the top right.
+            // No place in the menu bar to hang off: fall back to the top right.
             let visible = screen.visibleFrame
             origin = NSPoint(x: visible.maxX - size.width - 12, y: visible.maxY - size.height - 6)
         }
@@ -320,7 +323,10 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     }
 
     private func anchorScreen() -> NSScreen {
-        if let button = anchorProvider?(), let screen = button.window?.screen { return screen }
+        if let anchor = anchorProvider?(),
+           let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor) }) {
+            return screen
+        }
         return NSScreen.main ?? NSScreen.screens.first ?? NSScreen()
     }
 

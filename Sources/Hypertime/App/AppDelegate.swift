@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Launch shows the popup without stealing focus (A-03, R-08).
-        panel.show(mode: .passive)
+        showLaunchPopup()
         DispatchQueue.main.async { [weak self] in self?.isLaunching = false }
         Log.app.info("Launched")
     }
@@ -107,6 +107,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Show in Finder")
         if alert.runModal() == .alertSecondButtonReturn {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: quarantinedPath)])
+        }
+    }
+
+    /// The menu bar places the status item a beat after it is created; showing the popup before
+    /// that anchors it to an off-screen frame and it lands in a corner. Waits up to a second.
+    private func showLaunchPopup(attempt: Int = 0) {
+        guard statusItem.screenFrame == nil, attempt < 20 else {
+            panel.show(mode: .passive)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.showLaunchPopup(attempt: attempt + 1)
         }
     }
 
@@ -133,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Wiring
 
     private func wire() {
-        panel.anchorProvider = { [weak self] in self?.statusItem.button }
+        panel.anchorProvider = { [weak self] in self?.statusItem.screenFrame }
         panel.onPauseRequested = { [weak self] view in
             guard let self else { return }
             // Anchored under the pause icon button in the popup header.

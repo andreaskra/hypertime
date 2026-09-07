@@ -47,6 +47,19 @@ enum SelfTest {
         if let screen = NSScreen.main {
             check("panel sits inside the visible frame", screen.visibleFrame.intersects(frame))
         }
+        // With nowhere in the menu bar to hang off — not yet placed, or pushed into the overflow
+        // — the panel belongs in the top right, never in a corner of the desktop.
+        let realAnchor = panel.anchorProvider
+        panel.anchorProvider = { nil }
+        panel.show(mode: .passive)
+        if let screen = NSScreen.main {
+            let fallback = panelFrame(panel)
+            check("without an anchor the panel falls back to the top right",
+                  fallback.maxY > screen.visibleFrame.midY && fallback.midX > screen.visibleFrame.midX,
+                  String(format: "origin %.0f, %.0f", fallback.minX, fallback.minY))
+        }
+        panel.anchorProvider = realAnchor
+        panel.show(mode: .passive)
 
         check("dropdown lists the project", viewModel.matches.contains { $0.name == "Self Test" })
         check("dropdown starts closed so the amount stays visible", !viewModel.showsProjectList)
@@ -159,16 +172,70 @@ enum SelfTest {
         check("CSV export has a header", csv?.contains("Date,Self Test") == true)
         check("CSV export has the day row", csv?.contains(today.isoString + ",2:00:00") == true)
 
-        // Windows.
-        check("panel positions under the status item",
-              panelFrame(panel).maxY <= (NSScreen.main?.frame.maxY ?? 0))
+        // The header control has to work from all three states. Idle is where the popup opens
+        // after a launch or a quit, and it used to show a disabled pause icon — no way back into
+        // tracking except committing an amount.
+        let today2 = model.today
+        model.engine.stop()
+        viewModel.prepareForShow()
+        check("idle offers an enabled play button",
+              !viewModel.isTracking && !viewModel.isPaused && viewModel.canToggleTracking)
+        let beforeStart = (try? model.store.seconds(project: project!.id, day: today2)) ?? 0
+        viewModel.toggleTracking()
+        check("play from idle starts tracking", model.engine.status.isTracking)
+        check("…without attributing any time",
+              ((try? model.store.seconds(project: project!.id, day: today2)) ?? 0) == beforeStart)
+
+        model.pause(.m15)
+        viewModel.prepareForShow()
+        check("paused offers a play button", viewModel.isPaused && viewModel.canToggleTracking)
+        viewModel.toggleTracking()
+        check("play from paused resumes", model.engine.status.isTracking)
+
+        model.engine.stop()
+        viewModel.prepareForShow()
+        viewModel.projectTextChanged("")
+        check("idle with no project named has nothing to start", !viewModel.canToggleTracking)
 
         // The dismiss is animated; give it a run loop turn before checking the window is gone.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             check("panel is ordered out once the dismiss finishes", !panel.isVisible)
-            FileHandle.standardError.write(Data("self-test: \(failures == 0 ? "PASS" : "FAIL (\(failures))")\n".utf8))
-            exit(failures == 0 ? 0 : 1)
+            // The menu bar only places the status item once launching is over, which is exactly
+            // why the popup used to land in a corner. Everything below needs a placed item.
+            waitForStatusItem(statusItem, panel, attempt: 0)
         }
+    }
+
+    private static func waitForStatusItem(_ statusItem: StatusItemController,
+                                          _ panel: CheckInPanelController,
+                                          attempt: Int) {
+        guard statusItem.screenFrame == nil, attempt < 40 else {
+            checkPlacement(statusItem, panel)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            waitForStatusItem(statusItem, panel, attempt: attempt + 1)
+        }
+    }
+
+    /// The popup hangs off the status item, so it has to be *under* it and nowhere else.
+    private static func checkPlacement(_ statusItem: StatusItemController, _ panel: CheckInPanelController) {
+        check("status item takes its place in the menu bar", statusItem.screenFrame != nil)
+
+        panel.show(mode: .passive)
+        let frame = panelFrame(panel)
+        if let anchor = statusItem.screenFrame, let screen = NSScreen.main {
+            let clampedToEdge = frame.maxX >= screen.visibleFrame.maxX - 8.5
+            check("panel is centred under the status item",
+                  abs(frame.midX - anchor.midX) < 1 || clampedToEdge,
+                  String(format: "panel %.0f vs item %.0f", frame.midX, anchor.midX))
+            check("panel hangs 6 pt below the menu bar",
+                  abs(frame.maxY - (screen.visibleFrame.maxY - 6)) < 1,
+                  String(format: "top %.0f, menu bar bottom %.0f", frame.maxY, screen.visibleFrame.maxY))
+        }
+
+        FileHandle.standardError.write(Data("self-test: \(failures == 0 ? "PASS" : "FAIL (\(failures))")\n".utf8))
+        exit(failures == 0 ? 0 : 1)
     }
 
     /// The Dock icon: present in the bundle, and actually masked to the macOS icon shape rather

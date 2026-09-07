@@ -16,6 +16,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     var button: NSStatusBarButton? { statusItem.button }
 
+    /// Where the item sits on screen, or nil until the menu bar has placed it. Until then its
+    /// window reports an off-screen frame (observed: origin {0, -37}), and anchoring the popup
+    /// to that drops it in the bottom-left corner of the display.
+    var screenFrame: NSRect? {
+        guard let button = statusItem.button, let window = button.window, let screen = window.screen else { return nil }
+        let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
+        guard frame.width > 1, frame.height > 1 else { return nil }
+        // A placed item is in the menu bar, which is the strip above the screen's visible frame.
+        guard frame.maxY > screen.visibleFrame.maxY else { return nil }
+        return frame
+    }
+
     init(model: AppModel) {
         self.model = model
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

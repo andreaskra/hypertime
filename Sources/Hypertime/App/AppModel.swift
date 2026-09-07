@@ -161,6 +161,17 @@ final class AppModel {
         return true
     }
 
+    /// Starts tracking a project without attributing any time to it — the header's play button.
+    /// Goes through `commit` with zero seconds so the check-in clock restarts from now.
+    @discardableResult
+    func startTracking(name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let project = try? store.findOrCreateProject(named: trimmed) else { return false }
+        engine.commit(projectID: project.id, seconds: 0)
+        Log.engine.info("Started tracking \(project.name, privacy: .public)")
+        return true
+    }
+
     func pause(_ preset: PausePreset, customDuration: Seconds? = nil) {
         let until = pauseScheduler.until(preset,
                                         customDuration: customDuration,

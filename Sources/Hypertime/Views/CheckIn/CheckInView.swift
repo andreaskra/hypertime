@@ -114,9 +114,11 @@ struct CheckInView: View {
             }
 
             Button {
-                viewModel.isPaused ? viewModel.resume() : viewModel.requestPause()
+                viewModel.toggleTracking()
             } label: {
-                Image(systemName: viewModel.isPaused ? Tokens.Icons.resume : Tokens.Icons.pause)
+                // Play whenever time is not running — paused or idle. Idle is where the popup
+                // starts after a launch, and it needs a way to begin tracking.
+                Image(systemName: viewModel.isTracking ? Tokens.Icons.pause : Tokens.Icons.resume)
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Tokens.Palette.textSecondary.color)
                     .frame(width: Tokens.Size.iconButton, height: Tokens.Size.iconButton)
@@ -126,9 +128,9 @@ struct CheckInView: View {
                     }
             }
             .buttonStyle(.plain)
-            .disabled(!viewModel.isTracking && !viewModel.isPaused)
-            .opacity(viewModel.isTracking || viewModel.isPaused ? 1 : 0.4)
-            .help(viewModel.isPaused ? "Resume tracking" : "Pause tracking")
+            .disabled(!viewModel.canToggleTracking)
+            .opacity(viewModel.canToggleTracking ? 1 : 0.4)
+            .help(viewModel.trackingToggleHelp)
         }
         .frame(height: Tokens.Size.headerHeight)
     }
