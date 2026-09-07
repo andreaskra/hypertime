@@ -23,15 +23,15 @@ final class PanelPresentation {
     var isConfirming = false
 
     var contentHeight: CGFloat = Tokens.Size.popupMinHeight
-    var fieldBottom: CGFloat = 78
+    /// Y of the today-list section in panel coordinates: where the dropdown is anchored, so the
+    /// amount stays visible while a project is being picked.
+    var listTop: CGFloat = 120
     var dropdownHeight: CGFloat = 0
 
     var onHeightRequest: ((CGFloat) -> Void)?
 
     var requiredHeight: CGFloat {
-        let dropdownBottom = dropdownHeight > 0
-            ? fieldBottom + Tokens.Space.s1 + dropdownHeight + Tokens.Space.s4
-            : 0
+        let dropdownBottom = dropdownHeight > 0 ? listTop + dropdownHeight + Tokens.Space.s4 : 0
         return max(contentHeight, dropdownBottom)
     }
 
@@ -41,9 +41,9 @@ final class PanelPresentation {
         onHeightRequest?(requiredHeight)
     }
 
-    func reportFieldBottom(_ value: CGFloat) {
-        guard abs(value - fieldBottom) > 0.5 else { return }
-        fieldBottom = value
+    func reportListTop(_ value: CGFloat) {
+        guard abs(value - listTop) > 0.5 else { return }
+        listTop = value
         onHeightRequest?(requiredHeight)
     }
 

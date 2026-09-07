@@ -15,10 +15,8 @@ struct ProjectList: View {
                         rowView(row, isHighlighted: index == viewModel.highlighted)
                             .id(row.id)
                             .contentShape(Rectangle())
-                            .onTapGesture {
-                                viewModel.selectRow(index)
-                                viewModel.commit()
-                            }
+                            // Picking fills the field and closes the list; ↩ or Confirm commits.
+                            .onTapGesture { viewModel.selectRow(index) }
                     }
                 }
                 .padding(Tokens.Space.s1)
@@ -35,9 +33,10 @@ struct ProjectList: View {
     }
 
     /// Rows are 26 pt; at most six are visible before the list scrolls.
-    var height: CGFloat {
-        let rows = min(viewModel.matches.count, Tokens.Size.todayListMaxVisibleRows)
-        return CGFloat(rows) * Tokens.Size.dropdownRowHeight + Tokens.Space.s2
+    var height: CGFloat { Self.height(rows: viewModel.matches.count) }
+
+    static func height(rows: Int) -> CGFloat {
+        CGFloat(min(rows, Tokens.Size.todayListMaxVisibleRows)) * Tokens.Size.dropdownRowHeight + Tokens.Space.s2
     }
 
     @ViewBuilder

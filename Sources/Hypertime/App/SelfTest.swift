@@ -37,8 +37,31 @@ enum SelfTest {
         }
 
         check("dropdown lists the project", viewModel.matches.contains { $0.name == "Self Test" })
+        check("dropdown starts closed so the amount stays visible", !viewModel.showsProjectList)
+
+        viewModel.focus = .project
         viewModel.projectTextChanged("self")
         check("typing filters the list", viewModel.matches.contains { $0.name == "Self Test" })
+        check("typing opens the dropdown", viewModel.showsProjectList)
+        check("dropdown hangs below the amount field", panel.presentation.listTop > 60,
+              "\(panel.presentation.listTop)")
+        check("panel grows to fit an open dropdown",
+              panel.presentation.requiredHeight >= panel.presentation.listTop + panel.presentation.dropdownHeight)
+
+        viewModel.closeProjectList()
+        check("dropdown closes without closing the popup", !viewModel.showsProjectList && panel.isVisible)
+
+        viewModel.toggleProjectList()
+        check("the chevron reopens the dropdown", viewModel.showsProjectList)
+        viewModel.selectRow(0)
+        check("picking a row closes the dropdown", !viewModel.showsProjectList)
+        check("picking a row does not commit", panel.isVisible && model.engine.pendingSeconds == 0)
+        check("picking a row fills the field", !viewModel.fieldText.isEmpty)
+
+        viewModel.projectTextChanged("self")
+        viewModel.focus = .time
+        check("leaving the project field closes the dropdown", !viewModel.showsProjectList)
+        viewModel.focus = .project
         check("create row comes first for an unknown name", {
             viewModel.projectTextChanged("brand new thing")
             if case .create(let name) = viewModel.matches.first { return name == "brand new thing" }

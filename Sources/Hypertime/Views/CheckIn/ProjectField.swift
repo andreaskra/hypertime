@@ -21,9 +21,19 @@ struct ProjectField: View {
                 onCommand: handle,
                 onBeginEditing: { viewModel.focus = .project }
             )
-            Image(systemName: Tokens.Icons.dropdownChevron)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Tokens.Palette.textTertiary.color)
+            Button {
+                viewModel.focus = .project
+                viewModel.toggleProjectList()
+            } label: {
+                Image(systemName: Tokens.Icons.dropdownChevron)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Tokens.Palette.textTertiary.color)
+                    .rotationEffect(.degrees(viewModel.isProjectListOpen ? 180 : 0))
+                    .frame(width: 14, height: Tokens.Size.fieldHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(viewModel.isProjectListOpen ? "Hide the project list" : "Show the project list")
         }
         .padding(.horizontal, Tokens.Space.s3)
         .frame(height: Tokens.Size.fieldHeight)
@@ -53,9 +63,15 @@ struct ProjectField: View {
             viewModel.commit()
             return true
         case .cancelOperation:
-            viewModel.close()
+            // First Esc dismisses the dropdown; a second one closes the popup.
+            if viewModel.isProjectListOpen {
+                viewModel.closeProjectList()
+            } else {
+                viewModel.close()
+            }
             return true
         case .insertTab:
+            viewModel.closeProjectList()
             viewModel.focus = .time
             return true
         case .insertBacktab:

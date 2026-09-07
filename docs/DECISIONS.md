@@ -61,3 +61,11 @@ Everything in `PLAN.md` has been built. What remains needs a person, not more co
   `docs/screenshots/` are ready to diff against the artboards once they are available.
 - **Developer ID release.** `scripts/release.sh` was verified in `--adhoc` mode. Signing with
   the installed Developer ID certificate and running `--notarize` are the owner's calls.
+
+## Fixes after the first hands-on pass
+
+| Date | Ref | Decision | Why |
+|---|---|---|---|
+| 2026-09-07 | R-07 | The dropdown is an explicit transient state (`isProjectListOpen`), not "the project field has focus". It opens on typing, on ↑/↓ and on the chevron; it closes on pick, Esc, Tab, focus change and commit. | As shipped it was open the entire time the field had focus, which is every time the popup opens — so it could never be dismissed and permanently hid the amount. |
+| 2026-09-07 | R-07 | Clicking a row fills the field and closes the dropdown; committing stays an explicit ↩ or Confirm. First Esc dismisses the dropdown, a second closes the popup. | Picking a project was wired straight to `commit()`, so the only way to close the list was to file time. Select-then-confirm is standard combobox behaviour and cannot commit by accident. |
+| 2026-09-07 | A-popup dropdown | The dropdown is anchored to the top of the today list rather than directly under the field, and the list area reserves the dropdown's height while it is open so the buttons move down instead of being covered. | The handoff describes it as overlaying (and dimming) the today list. Anchoring it to the field buried the amount — the one number you need while choosing where the time goes — and the buttons underneath it. |

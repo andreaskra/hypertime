@@ -20,41 +20,52 @@ struct CheckInView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Tokens.Space.s3) {
-            header
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: Tokens.Space.s3) {
+                header
 
-            ProjectField(viewModel: viewModel)
-                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("panel")).maxY } action: {
-                    presentation.reportFieldBottom($0)
-                }
-                .overlay(alignment: .topLeading) {
-                    if viewModel.showsProjectList {
-                        let list = ProjectList(viewModel: viewModel)
-                        list
-                            .frame(width: Self.width - 2 * Tokens.Space.s4)
-                            .offset(y: Tokens.Size.fieldHeight + Tokens.Space.s1)
-                            .transition(.opacity)
-                            .onAppear { presentation.reportDropdownHeight(list.height) }
-                            .onDisappear { presentation.reportDropdownHeight(0) }
-                            .onChange(of: viewModel.matches.count) { presentation.reportDropdownHeight(list.height) }
+                ProjectField(viewModel: viewModel)
+
+                AmountField(viewModel: viewModel, presentation: presentation)
+                    // The dropdown hangs below the amount, so what you are about to add stays
+                    // readable while you pick the project it goes to.
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("panel")).maxY } action: {
+                        presentation.reportListTop($0 + Tokens.Space.s3)
                     }
+
+                if hasTodayList || viewModel.showsProjectList {
+                    VStack(alignment: .leading, spacing: Tokens.Space.s3) {
+                        if hasTodayList {
+                            Hairline()
+                            TodayListView(viewModel: viewModel)
+                                // The dropdown owns the keyboard while it is open; the list steps back.
+                                .opacity(viewModel.showsProjectList ? 0.45 : 1)
+                                .allowsHitTesting(!viewModel.showsProjectList)
+                        }
+                    }
+                    // While the dropdown is open the list area reserves its height, so the
+                    // buttons move down instead of being covered.
+                    .frame(maxWidth: .infinity,
+                           minHeight: viewModel.showsProjectList ? dropdownHeight : 0,
+                           alignment: .top)
                 }
-                .zIndex(2)
 
-            AmountField(viewModel: viewModel, presentation: presentation)
-
-            if !viewModel.todayRows.isEmpty || viewModel.isTracking {
-                Hairline()
-                TodayListView(viewModel: viewModel)
-                    // The dropdown owns the keyboard while it is open; the list steps back.
-                    .opacity(viewModel.showsProjectList ? 0.45 : 1)
-                    .allowsHitTesting(!viewModel.showsProjectList)
+                buttons
             }
+            .padding(Tokens.Space.s4)
 
-            buttons
+            if viewModel.showsProjectList {
+                ProjectList(viewModel: viewModel)
+                    .frame(width: Self.width - 2 * Tokens.Space.s4)
+                    .offset(x: Tokens.Space.s4, y: presentation.listTop)
+                    .transition(.opacity)
+                    .onAppear { presentation.reportDropdownHeight(dropdownHeight) }
+                    .onDisappear { presentation.reportDropdownHeight(0) }
+                    .onChange(of: viewModel.matches.count) { presentation.reportDropdownHeight(dropdownHeight) }
+                    .zIndex(2)
+            }
         }
         .animation(Tokens.Motion.listOpen.animation(reduceMotion: reduceMotion), value: viewModel.showsProjectList)
-        .padding(Tokens.Space.s4)
         .frame(width: Self.width)
         .coordinateSpace(.named("panel"))
         .background { GlassBackground(style: material, cornerRadius: Tokens.Radius.panel) }
@@ -65,6 +76,10 @@ struct CheckInView: View {
         .scaleEffect(scaleWhileHidden, anchor: .top)
         .offset(y: presentation.isAppeared ? 0 : -6)
     }
+
+    private var hasTodayList: Bool { !viewModel.todayRows.isEmpty || viewModel.isTracking }
+
+    private var dropdownHeight: CGFloat { ProjectList.height(rows: viewModel.matches.count) }
 
     /// Focused popups scale in from 0.98; passive ones only fade and slide.
     private var scaleWhileHidden: CGFloat {

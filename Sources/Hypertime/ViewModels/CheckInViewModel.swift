@@ -44,6 +44,9 @@ final class CheckInViewModel {
     var query = ""
     var matches: [ProjectMatchRow] = []
     var highlighted = 0
+    /// The dropdown is a transient state, not "the project field has focus": it opens when the
+    /// user types, arrows into it or clicks the chevron, and closes on pick, Esc, Tab or commit.
+    var isProjectListOpen = false
 
     // Time field
     var timeText = ""
@@ -55,7 +58,9 @@ final class CheckInViewModel {
     var invalidTotalRow: UUID?
 
     // Chrome
-    var focus: CheckInFocus = .none
+    var focus: CheckInFocus = .none {
+        didSet { if focus != .project { isProjectListOpen = false } }
+    }
     var statusLine = ""
     var todayTotalText = ""
     var isPaused = false
@@ -72,8 +77,8 @@ final class CheckInViewModel {
         self.model = model
     }
 
-    /// The dropdown is open exactly while the project field owns the keyboard (R-07).
-    var showsProjectList: Bool { focus == .project && !matches.isEmpty }
+    /// The dropdown is visible while it is open and the project field owns the keyboard (R-07).
+    var showsProjectList: Bool { isProjectListOpen && focus == .project && !matches.isEmpty }
 
     var timeStyle: TimeStyle { model.settings.timeDisplayStyle }
 
@@ -93,6 +98,7 @@ final class CheckInViewModel {
         isEditingTime = false
         timeFieldInvalid = false
         invalidTotalRow = nil
+        isProjectListOpen = false
         refreshMatches(preselect: current?.id)
         refreshTime()
         refreshRows()
@@ -168,11 +174,38 @@ final class CheckInViewModel {
         fieldText = text
         query = text
         refreshMatches()
+        isProjectListOpen = true
+    }
+
+    func openProjectList() {
+        guard !matches.isEmpty else { return }
+        isProjectListOpen = true
+    }
+
+    func closeProjectList() {
+        isProjectListOpen = false
+    }
+
+    func toggleProjectList() {
+        if isProjectListOpen {
+            closeProjectList()
+        } else {
+            // Reopening after a pick shows every project again, with the picked one highlighted.
+            query = ""
+            refreshMatches(preselect: model.currentProject.map(\.id))
+            if let index = matches.firstIndex(where: { $0.name == fieldText }) { highlighted = index }
+            isProjectListOpen = true
+        }
     }
 
     /// ↑/↓ move the selection and mirror the highlighted name into the field (combobox semantics).
+    /// The first press only opens the dropdown, so nothing changes under the user unseen.
     func moveSelection(by delta: Int) {
         guard !matches.isEmpty else { return }
+        guard isProjectListOpen else {
+            openProjectList()
+            return
+        }
         let count = matches.count
         highlighted = ((highlighted + delta) % count + count) % count
         fieldText = matches[highlighted].name
@@ -187,10 +220,20 @@ final class CheckInViewModel {
         fieldText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Picking a row fills the field and closes the dropdown — committing stays an explicit ↩.
     func selectRow(_ index: Int) {
         guard matches.indices.contains(index) else { return }
-        highlighted = index
-        fieldText = matches[index].name
+        let row = matches[index]
+        fieldText = row.name
+        // Drop the filter so reopening the list shows everything, with this project highlighted.
+        query = ""
+        if case .project(let project, _) = row {
+            refreshMatches(preselect: project.id)
+        } else {
+            refreshMatches()
+        }
+        isProjectListOpen = false
+        focus = .project
     }
 
     // MARK: - Time field
@@ -230,6 +273,7 @@ final class CheckInViewModel {
             return
         }
         isEditingTime = false
+        isProjectListOpen = false
         onCommitted?()
     }
 
