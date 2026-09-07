@@ -67,8 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let index = CommandLine.arguments.firstIndex(of: "--render-icon"),
-           index + 1 < CommandLine.arguments.count {
-            exit(IconRenderer.run(directory: CommandLine.arguments[index + 1]) ? 0 : 1)
+           index + 2 < CommandLine.arguments.count {
+            exit(IconRenderer.run(source: CommandLine.arguments[index + 2],
+                                  into: CommandLine.arguments[index + 1]) ? 0 : 1)
         }
 
         if let index = CommandLine.arguments.firstIndex(of: "--screenshots"),

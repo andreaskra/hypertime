@@ -26,7 +26,7 @@ done
 
 # App icon: rendered from the handoff's vector definition, then packed with iconutil.
 ICON_WORK="$(mktemp -d)"
-if "$APP/Contents/MacOS/Hypertime" --render-icon "$ICON_WORK" 2>/dev/null; then
+if "$APP/Contents/MacOS/Hypertime" --render-icon "$ICON_WORK" "$RESOURCES/AppIcon.appiconset" 2>/dev/null; then
   iconutil -c icns "$ICON_WORK/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 else
   echo "Warning: could not render the app icon."

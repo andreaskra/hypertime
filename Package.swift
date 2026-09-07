@@ -21,7 +21,7 @@ let package = Package(
             name: "Hypertime",
             dependencies: ["HypertimeCore"],
             path: "Sources/Hypertime",
-            exclude: ["Resources/Info.plist", "Resources/Hypertime.entitlements"],
+            exclude: ["Resources/Info.plist", "Resources/Hypertime.entitlements", "Resources/AppIcon.appiconset"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

@@ -31,7 +31,7 @@ scripts/run.sh --seed-demo              # separate demo database (6 projects, 90
 scripts/release.sh                      # signed .app + .zip + .dmg (add --notarize to submit)
 dist/Hypertime.app/Contents/MacOS/Hypertime --self-test   # headless AppKit smoke test
 dist/Hypertime.app/Contents/MacOS/Hypertime --screenshots docs/screenshots
-dist/Hypertime.app/Contents/MacOS/Hypertime --render-icon <dir>   # AppIcon.iconset
+dist/Hypertime.app/Contents/MacOS/Hypertime --render-icon <out> <appiconset>
 ```
 
 `--self-test` exercises the status item, panel positioning and focus behaviour, the commit

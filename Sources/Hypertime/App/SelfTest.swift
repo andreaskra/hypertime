@@ -19,7 +19,7 @@ enum SelfTest {
             let image = MenuBarGlyph.image($0)
             return image.isTemplate && image.size == NSSize(width: 18, height: 18)
         })
-        check("app icon renders at 1024", MenuBarGlyph.appIcon(size: 1024).tiffRepresentation != nil)
+        checkAppIcon()
         check("popup width matches the design token", CheckInView.width == Tokens.Size.popupWidth)
 
         // Seed a project the way a first commit would.
@@ -157,6 +157,31 @@ enum SelfTest {
             FileHandle.standardError.write(Data("self-test: \(failures == 0 ? "PASS" : "FAIL (\(failures))")\n".utf8))
             exit(failures == 0 ? 0 : 1)
         }
+    }
+
+    /// The Dock icon: present in the bundle, and actually masked to the macOS icon shape rather
+    /// than the full-bleed square the handoff PNGs are authored as.
+    private static func checkAppIcon() {
+        guard let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+              let icon = NSImage(contentsOf: url) else {
+            check("bundle contains AppIcon.icns", false)
+            return
+        }
+        check("bundle contains AppIcon.icns", true)
+
+        let target = NSSize(width: 512, height: 512)
+        guard let rep = icon.representations.first(where: { $0.pixelsWide == 512 }) as? NSBitmapImageRep
+                ?? icon.bestRepresentation(for: NSRect(origin: .zero, size: target), context: nil, hints: nil)
+                    .flatMap({ $0 as? NSBitmapImageRep }) else {
+            check("app icon has a 512 px rendition", false)
+            return
+        }
+        check("app icon has a 512 px rendition", true)
+
+        let corner = rep.colorAt(x: 2, y: 2)?.alphaComponent ?? 1
+        let centre = rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2)?.alphaComponent ?? 0
+        check("app icon is masked, not a full-bleed square", corner < 0.05, String(format: "corner alpha %.2f", corner))
+        check("app icon is opaque in the middle", centre > 0.95, String(format: "centre alpha %.2f", centre))
     }
 
     private static func panelFrame(_ panel: CheckInPanelController) -> NSRect {

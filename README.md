@@ -139,7 +139,7 @@ scripts/release.sh          # signed .app + .zip + .dmg in dist/
 ```
 
 Hidden launch arguments: `--self-test` (headless AppKit smoke test, non-zero on failure),
-`--screenshots <dir>` (design QA renders), `--render-icon <dir>` (AppIcon.iconset).
+`--screenshots <dir>` (design QA renders), `--render-icon <out> <appiconset>` (AppIcon.iconset).
 
 - [docs/PLAN.md](docs/PLAN.md) — requirements, architecture, component specs, phase plan
 - [docs/DESIGN_BRIEF.md](docs/DESIGN_BRIEF.md) — the brief the visual design was made from
