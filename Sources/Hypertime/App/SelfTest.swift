@@ -283,6 +283,38 @@ enum SelfTest {
         let centre = rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2)?.alphaComponent ?? 0
         check("app icon is masked, not a full-bleed square", corner < 0.05, String(format: "corner alpha %.2f", corner))
         check("app icon is opaque in the middle", centre > 0.95, String(format: "centre alpha %.2f", centre))
+
+        // What the Dock and Finder actually draw comes from LaunchServices, not from the file:
+        // a stale registration keeps handing out the generic icon however good the bundle is.
+        let served = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+        let ours = centreColour(of: icon)
+        let system = centreColour(of: served)
+        let matches = ours.map { mine in system.map { abs(mine.0 - $0.0) < 0.08 && abs(mine.1 - $0.1) < 0.08
+                                                      && abs(mine.2 - $0.2) < 0.08 } ?? false } ?? false
+        check("LaunchServices serves our icon, not the generic one", matches,
+              "bundle \(describe(ours)) vs system \(describe(system))")
+    }
+
+    /// Centre pixel of an icon at 128 pt — our artwork has an accent-blue dot there, the generic
+    /// document icon is near-white, so the two are trivially distinguishable.
+    private static func centreColour(of image: NSImage) -> (CGFloat, CGFloat, CGFloat)? {
+        let size = NSSize(width: 128, height: 128)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 128, pixelsHigh: 128,
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                         isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: rep) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        image.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let colour = rep.colorAt(x: 64, y: 64)?.usingColorSpace(.deviceRGB) else { return nil }
+        return (colour.redComponent, colour.greenComponent, colour.blueComponent)
+    }
+
+    private static func describe(_ colour: (CGFloat, CGFloat, CGFloat)?) -> String {
+        guard let colour else { return "none" }
+        return String(format: "rgb(%.2f, %.2f, %.2f)", colour.0, colour.1, colour.2)
     }
 
     private static func panelFrame(_ panel: CheckInPanelController) -> NSRect {
