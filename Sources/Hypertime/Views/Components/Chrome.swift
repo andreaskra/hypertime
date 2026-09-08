@@ -12,17 +12,25 @@ struct FocusRing: ViewModifier {
     var drawsBorder: Bool = true
 
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.controlActiveState) private var controlActiveState
+    @Environment(\.forcesActiveAppearance) private var forcesActiveAppearance
+
+    /// A focus ring means "typing goes here". It is a lie in a window that does not have the
+    /// keyboard, so it is only drawn while the window is key.
+    private var isVisible: Bool {
+        isFocused && (controlActiveState == .key || forcesActiveAppearance)
+    }
 
     func body(content: Content) -> some View {
         content
             .overlay {
-                if isFocused, drawsBorder {
+                if isVisible, drawsBorder {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .strokeBorder(Tokens.Palette.accent, lineWidth: Tokens.Focus.borderWidth)
                 }
             }
             .background {
-                if isFocused {
+                if isVisible {
                     RoundedRectangle(cornerRadius: cornerRadius + width / 2, style: .continuous)
                         .stroke(Tokens.Palette.accent.opacity(Tokens.Focus.ringOpacity(contrast == .increased)),
                                 lineWidth: width)

@@ -25,6 +25,9 @@ struct VisualEffectView: NSViewRepresentable {
 /// window-server materials cannot be captured off-screen.
 extension EnvironmentValues {
     @Entry var opaqueSurfaces: Bool = false
+    /// Draw focus states as if the window were key. Only `--screenshots` sets this: its windows
+    /// are never key, and the renders exist to document the focus specs.
+    @Entry var forcesActiveAppearance: Bool = false
 }
 
 /// Glass surface from the handoff: material + tint + inner highlight stroke, with an automatic

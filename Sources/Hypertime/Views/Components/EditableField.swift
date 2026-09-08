@@ -41,8 +41,12 @@ struct EditableField: NSViewRepresentable {
             let wasEditing = field.currentEditor() != nil
             field.stringValue = text
             // The live counter rewrites the field every second; keep the pre-selected text
-            // selected so the first keystroke still replaces it.
-            if wasEditing, selectAllOnFocus { field.currentEditor()?.selectAll(nil) }
+            // selected so the first keystroke still replaces it. Only while the window has the
+            // keyboard — otherwise the selection keeps redrawing itself bright in a panel the
+            // user has already left.
+            if wasEditing, selectAllOnFocus, field.window?.isKeyWindow == true {
+                field.currentEditor()?.selectAll(nil)
+            }
         }
         field.font = font.nsFont
         field.alignment = alignment
@@ -54,12 +58,13 @@ struct EditableField: NSViewRepresentable {
             )
         }
 
-        guard let window = field.window else { return }
+        guard let window = field.window, window.isKeyWindow else { return }
         let isFirstResponder = window.firstResponder === field.currentEditor() && field.currentEditor() != nil
         if isFocused, !isFirstResponder {
             // Defer: SwiftUI may still be in the middle of a layout pass.
             DispatchQueue.main.async {
-                guard let window = field.window, field.window?.firstResponder !== field.currentEditor() else { return }
+                guard let window = field.window, window.isKeyWindow,
+                      window.firstResponder !== field.currentEditor() else { return }
                 window.makeFirstResponder(field)
                 if selectAllOnFocus { field.currentEditor()?.selectAll(nil) }
             }

@@ -130,7 +130,9 @@ enum ScreenshotRenderer {
     private static func render(_ name: String, _ view: AnyView, in directory: URL) {
         for mode in modes {
             // Materials cannot be captured off-screen; draw their opaque fallback instead.
-            let root = view.environment(\.opaqueSurfaces, true)
+            let root = view
+                .environment(\.opaqueSurfaces, true)
+                .environment(\.forcesActiveAppearance, true)
             let hosting = NSHostingView(rootView: root)
             hosting.appearance = NSAppearance(named: mode.appearance)
 
