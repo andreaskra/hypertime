@@ -8,6 +8,7 @@ final class SettingsViewModel {
     private let model: AppModel
 
     var checkInIntervalMinutes: Int { didSet { settings.checkInIntervalMinutes = checkInIntervalMinutes } }
+    var startTrackingOnLaunch: Bool { didSet { settings.startTrackingOnLaunch = startTrackingOnLaunch } }
     var pauseOnSleepAndLock: Bool { didSet { settings.pauseOnSleepAndLock = pauseOnSleepAndLock } }
     var morningHour: Int { didSet { settings.morningHour = morningHour } }
     var passiveAutoHide: Int { didSet { settings.passivePopupAutoHideSeconds = passiveAutoHide } }
@@ -35,6 +36,7 @@ final class SettingsViewModel {
         self.model = model
         let settings = model.settings
         checkInIntervalMinutes = settings.checkInIntervalMinutes
+        startTrackingOnLaunch = settings.startTrackingOnLaunch
         pauseOnSleepAndLock = settings.pauseOnSleepAndLock
         morningHour = settings.morningHour
         passiveAutoHide = settings.passivePopupAutoHideSeconds

@@ -245,8 +245,37 @@ struct TrackingEngineTests {
         #expect(try store.seconds(project: alpha.id, day: d("2026-09-07")) == 86400)
     }
 
-    @Test("restore after a clean quit: idle, project remembered, no time lost")
-    func restoreAfterQuit() throws {
+    @Test("restore picks tracking back up on the last project")
+    func restoreResumes() throws {
+        engine.start(projectID: alpha.id)
+        run(seconds: 120)
+        engine.stop()
+        clock.advance(by: 8 * 3600)                    // the app was closed overnight
+
+        let restored = TrackingEngine(store: store, clock: clock, settings: settings)
+        restored.restore()
+        #expect(restored.status.isTracking)
+        #expect(restored.currentProjectID == alpha.id)
+        #expect(restored.pendingSeconds == 0)          // none of the closed hours are work time
+        #expect(try store.seconds(project: alpha.id, day: d("2026-09-07")) == 120)
+    }
+
+    @Test("the check-in clock restarts when tracking resumes on launch")
+    func restoreRestartsCheckInClock() throws {
+        settings.checkInIntervalMinutes = 30
+        engine.start(projectID: alpha.id)
+        run(seconds: 60)
+        engine.stop()
+        clock.advance(by: 8 * 3600)
+
+        let restored = TrackingEngine(store: store, clock: clock, settings: settings)
+        restored.restore()
+        #expect(restored.nextCheckInAt == clock.now().addingTimeInterval(1800))
+    }
+
+    @Test("restore waits when start-on-launch is off (the old A-03 behaviour)")
+    func restoreStaysIdleWhenDisabled() throws {
+        settings.startTrackingOnLaunch = false
         engine.start(projectID: alpha.id)
         run(seconds: 120)
         engine.stop()
@@ -254,12 +283,32 @@ struct TrackingEngineTests {
         let restored = TrackingEngine(store: store, clock: clock, settings: settings)
         restored.restore()
         #expect(restored.status == .idle)
-        #expect(restored.currentProjectID == alpha.id)
+        #expect(restored.currentProjectID == alpha.id)  // still preselects it (R-05)
         #expect(restored.pending == nil)
         #expect(try store.seconds(project: alpha.id, day: d("2026-09-07")) == 120)
     }
 
-    @Test("restore after a crash recovers the persisted bucket")
+    @Test("restore does not resume a project deleted while the app was closed")
+    func restoreSkipsDeletedProject() throws {
+        engine.start(projectID: alpha.id)
+        run(seconds: 60)
+        engine.stop()
+        try store.deleteProject(id: alpha.id)
+
+        let restored = TrackingEngine(store: store, clock: clock, settings: settings)
+        restored.restore()
+        #expect(restored.status == .idle)
+    }
+
+    @Test("restore with nothing tracked before stays idle")
+    func restoreWithoutHistory() {
+        let restored = TrackingEngine(store: store, clock: clock, settings: settings)
+        restored.restore()
+        #expect(restored.status == .idle)
+        #expect(restored.currentProjectID == nil)
+    }
+
+    @Test("restore after a crash recovers the persisted bucket, then resumes")
     func restoreAfterCrash() throws {
         engine.start(projectID: alpha.id)
         run(seconds: 200)
@@ -267,10 +316,10 @@ struct TrackingEngineTests {
 
         let restored = TrackingEngine(store: store, clock: clock, settings: settings)
         restored.restore()
-        #expect(restored.status == .idle)
-        #expect(restored.currentProjectID == alpha.id)
-        #expect(restored.pending == nil)
         #expect(try store.seconds(project: alpha.id, day: d("2026-09-07")) == 200)
+        #expect(restored.status.isTracking)
+        #expect(restored.currentProjectID == alpha.id)
+        #expect(restored.pendingSeconds == 0)          // the recovered time is banked, not pending
     }
 
     @Test("liveSeconds only adds pending to the right project and day")

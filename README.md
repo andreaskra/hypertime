@@ -21,9 +21,15 @@ Requires macOS 15 or later (Apple silicon or Intel).
 
 ## First run
 
-Hypertime starts **idle** and shows its popup without taking focus. Type what you are working
-on and press ↩. That first confirm starts tracking; from then on the app asks again every
-30 minutes (configurable, or off).
+On the very first launch Hypertime has no projects yet, so it shows its popup without taking
+focus and waits. Type what you are working on and press ↩.
+
+After that it picks tracking straight back up on whatever you were last working on, every time
+it launches — you do not have to start it by hand. The popup still appears so you can see what
+it resumed on and change it. Turn this off with "Start tracking when Hypertime launches" in
+Settings if you would rather begin each session deliberately.
+
+While tracking, the app asks what you are working on every 30 minutes (configurable, or off).
 
 The menu bar icon shows the state at a glance: an empty dial when idle, a filled dot while
 tracking, two bars while paused.
@@ -42,8 +48,9 @@ written to a project until you confirm, so an unanswered popup can never misfile
   45 minutes are gone, not hidden.
 
 Time is never counted while the Mac sleeps or the screen is locked. Tracking pauses
-automatically and resumes with a check-in when you come back. Quitting stops tracking; the app
-does not resume on its own at launch.
+automatically and resumes with a check-in when you come back. Quitting stops tracking, and the
+hours the app spends closed are never counted — a relaunch starts a fresh bucket from that
+moment.
 
 ## Keyboard
 
@@ -114,7 +121,8 @@ settings, and can be overridden per export.
 
 ## Settings
 
-Check-in interval · pause on sleep and lock · morning hour for "pause until 07:00" ·
+Check-in interval · start tracking on launch · pause on sleep and lock ·
+morning hour for "pause until 07:00" ·
 passive popup auto-hide · time display format · elapsed time in the menu bar · week start ·
 Dock and Cmd+Tab visibility · launch at login · CSV defaults.
 
@@ -132,7 +140,7 @@ Back it up by copying that file. If it ever becomes unreadable, Hypertime moves 
 ## Development
 
 ```bash
-swift test                  # 101 tests over HypertimeCore
+swift test                  # 105 tests over HypertimeCore
 scripts/run.sh              # build dist/Hypertime.app and launch it
 scripts/run.sh --seed-demo  # same, against a seeded demo database
 scripts/release.sh          # signed .app + .zip + .dmg in dist/

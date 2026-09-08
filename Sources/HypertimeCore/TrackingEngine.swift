@@ -260,7 +260,8 @@ public final class TrackingEngine {
 
     // MARK: - Persistence
 
-    /// Restores across launches. Per A-03 the app starts idle; crashed pending time is recovered.
+    /// Restores across launches. Crashed pending time is recovered, then tracking either picks
+    /// up where it left off or waits, depending on `startTrackingOnLaunch`.
     public func restore() {
         guard let state = try? store.loadEngineState() else {
             persist(force: true)
@@ -280,10 +281,20 @@ public final class TrackingEngine {
         }
 
         pending = nil
-        status = .idle
         lastTickAt = clock.now()
-        persist(force: true)
-        broadcaster.send(.statusChanged(status))
+
+        // Time while the app was not running is never work time, so tracking always restarts
+        // from a fresh bucket at "now" — including the check-in clock.
+        if settings.startTrackingOnLaunch,
+           let projectID = currentProjectID,
+           (try? store.project(id: projectID)) != nil {
+            lastCommitAt = clock.now()
+            start(projectID: projectID)
+        } else {
+            status = .idle
+            persist(force: true)
+            broadcaster.send(.statusChanged(status))
+        }
     }
 
     private func setStatus(_ new: TrackingStatus) {

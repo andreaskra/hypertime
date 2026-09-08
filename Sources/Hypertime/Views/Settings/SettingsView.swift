@@ -13,6 +13,7 @@ struct SettingsView: View {
                         Text(minutes == 0 ? "Off" : "\(minutes) min").tag(minutes)
                     }
                 }
+                Toggle("Start tracking when Hypertime launches", isOn: $viewModel.startTrackingOnLaunch)
                 Toggle("Pause while asleep or locked", isOn: $viewModel.pauseOnSleepAndLock)
                 Picker("Morning starts at", selection: $viewModel.morningHour) {
                     ForEach(0..<24, id: \.self) { hour in

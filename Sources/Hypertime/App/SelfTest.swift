@@ -197,6 +197,28 @@ enum SelfTest {
         viewModel.projectTextChanged("")
         check("idle with no project named has nothing to start", !viewModel.canToggleTracking)
 
+        // Tracking picks itself back up on the next launch, on the project it was last on, and
+        // none of the time the app was closed is counted.
+        let resumeProject = try? model.store.findOrCreateProject(named: "Self Test")
+        model.engine.commit(projectID: resumeProject!.id, seconds: 0)
+        model.engine.stop()
+        let banked = (try? model.store.seconds(project: resumeProject!.id, day: model.today)) ?? 0
+
+        let relaunched = TrackingEngine(store: model.store, clock: model.clock, settings: model.settings)
+        relaunched.restore()
+        check("a relaunch picks tracking back up", relaunched.status.isTracking)
+        check("…on the project it was last on", relaunched.currentProjectID == resumeProject?.id)
+        check("…counting none of the time the app was closed", relaunched.pendingSeconds == 0)
+        check("…and banking nothing extra",
+              ((try? model.store.seconds(project: resumeProject!.id, day: model.today)) ?? 0) == banked)
+
+        model.settings.startTrackingOnLaunch = false
+        let waiting = TrackingEngine(store: model.store, clock: model.clock, settings: model.settings)
+        waiting.restore()
+        check("with the setting off a relaunch waits instead", waiting.status == .idle)
+        check("…but still remembers the project", waiting.currentProjectID == resumeProject?.id)
+        model.settings.startTrackingOnLaunch = true
+
         // The dismiss is animated; give it a run loop turn before checking the window is gone.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             check("panel is ordered out once the dismiss finishes", !panel.isVisible)

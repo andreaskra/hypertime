@@ -4,6 +4,7 @@ import Foundation
 public final class Settings: @unchecked Sendable {
     public enum Key: String, CaseIterable, Sendable {
         case checkInIntervalMinutes
+        case startTrackingOnLaunch
         case launchAtLogin
         case showInDockAndCmdTab
         case showElapsedInMenuBar
@@ -28,6 +29,7 @@ public final class Settings: @unchecked Sendable {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.checkInIntervalMinutes.rawValue: 30,
+            Key.startTrackingOnLaunch.rawValue: true,
             Key.launchAtLogin.rawValue: true,
             Key.showInDockAndCmdTab.rawValue: true,
             Key.showElapsedInMenuBar.rawValue: false,
@@ -64,6 +66,12 @@ public final class Settings: @unchecked Sendable {
     public var checkInInterval: TimeInterval? {
         let minutes = checkInIntervalMinutes
         return minutes > 0 ? TimeInterval(minutes) * 60 : nil
+    }
+
+    /// Pick tracking back up on the last project as soon as the app starts (supersedes A-03).
+    public var startTrackingOnLaunch: Bool {
+        get { defaults.bool(forKey: Key.startTrackingOnLaunch.rawValue) }
+        set { set(newValue, .startTrackingOnLaunch) }
     }
 
     public var launchAtLogin: Bool {
