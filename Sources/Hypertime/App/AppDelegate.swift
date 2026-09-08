@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activation = ActivationController()
         activation.applyActivationPolicy(showInDock: model.settings.showInDockAndCmdTab)
         MainMenu.install(target: self)
+        applyDockIcon()
 
         panel = CheckInPanelController(model: model, activation: activation)
         statusItem = StatusItemController(model: model)
@@ -92,6 +93,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showLaunchPopup()
         DispatchQueue.main.async { [weak self] in self?.isLaunching = false }
         Log.app.info("Launched")
+    }
+
+    /// Point the Dock tile at the icon inside the bundle we are actually running from. The Dock
+    /// caches the tile it drew for a bundle, and rebuilding one in place — which every
+    /// `build-app.sh` does — leaves it drawing whatever it cached first, which during development
+    /// is the generic icon from before there was one. Setting it explicitly costs nothing and
+    /// means the tile never disagrees with the build.
+    private func applyDockIcon() {
+        guard let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+              let icon = NSImage(contentsOf: url) else { return }
+        NSApp.applicationIconImage = icon
     }
 
     /// The database could not be opened and was replaced. Rare and destructive enough to be worth

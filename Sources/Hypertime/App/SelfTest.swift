@@ -329,6 +329,14 @@ enum SelfTest {
         let system = centreColour(of: served)
         let matches = ours.map { mine in system.map { abs(mine.0 - $0.0) < 0.08 && abs(mine.1 - $0.1) < 0.08
                                                       && abs(mine.2 - $0.2) < 0.08 } ?? false } ?? false
+        // The Dock draws the running app's tile from applicationIconImage, which the app points
+        // at its own bundle precisely so a stale Dock cache cannot outvote the build.
+        let tile = NSApp.applicationIconImage.flatMap(centreColour)
+        let tileMatches = ours.map { mine in tile.map { abs(mine.0 - $0.0) < 0.08 && abs(mine.1 - $0.1) < 0.08
+                                                        && abs(mine.2 - $0.2) < 0.08 } ?? false } ?? false
+        check("the Dock tile is set from the bundle we are running", tileMatches,
+              "tile \(describe(tile))")
+
         check("LaunchServices serves our icon, not the generic one", matches,
               "bundle \(describe(ours)) vs system \(describe(system))")
     }
