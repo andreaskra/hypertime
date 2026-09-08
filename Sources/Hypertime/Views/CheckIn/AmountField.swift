@@ -44,6 +44,12 @@ struct AmountField: View {
             }
             .focusRing(isFocused, radius: Tokens.Radius.field)
             .shake(presentation.invalidTrigger)
+            // Confirm bounce. Scale only: a rotation3DEffect on this full-width plane displaced
+            // the label out of its slot in the only rendering that can be captured here, and a
+            // wrong guess would be visible on every single commit.
+            .scaleEffect(presentation.commitScale)
+            .animation(presentation.commitAnimation(reduceMotion: reduceMotion),
+                       value: presentation.commitPhase)
 
             Text(caption)
                 .font(Tokens.Typography.caption)

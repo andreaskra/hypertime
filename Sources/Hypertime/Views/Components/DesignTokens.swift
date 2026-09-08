@@ -226,6 +226,11 @@ enum Tokens {
         static let highlightMove = MotionToken(ms: 90, curve: .easeOut(duration: 0.09))
         static let digitTick = MotionToken(ms: 150, curve: .linear(duration: 0.15))
         static let commit = MotionToken(ms: 250, curve: .easeOut(duration: 0.25))
+        /// Confirm bounce on the amount label: shrink, overshoot, settle, then dismiss.
+        /// 110 + 150 + 100 + 120 ms of dismiss = 480 ms, inside the half second asked for.
+        static let commitShrink = MotionToken(ms: 110, curve: .easeIn(duration: 0.11))
+        static let commitMagnify = MotionToken(ms: 150, curve: .easeOut(duration: 0.15))
+        static let commitSettle = MotionToken(ms: 100, curve: .easeInOut(duration: 0.10))
         static let invalidShake = MotionToken(ms: 300, curve: .easeInOut(duration: 0.3))
         static let pauseCrossfade = MotionToken(ms: 200, curve: .easeInOut(duration: 0.2))
         static let discard = MotionToken(ms: 250, curve: .easeIn(duration: 0.25))
@@ -233,6 +238,12 @@ enum Tokens {
         static let discardCollapse = MotionToken(ms: 120, curve: .easeIn(duration: 0.12))
         static let autoHide = MotionToken(ms: 20000, curve: .linear(duration: 20))
         static let reduceMotionFallback = MotionToken(ms: 120, curve: .linear(duration: 0.12))
+    }
+
+    /// The confirm bounce: the amount label pulls back, overshoots and settles.
+    enum Confirm {
+        static let shrunkScale: CGFloat = 0.82
+        static let magnifiedScale: CGFloat = 1.14
     }
 
     // MARK: - Focus

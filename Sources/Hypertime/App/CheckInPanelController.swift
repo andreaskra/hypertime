@@ -117,7 +117,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         panel.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
         hoverView.onMouseEntered = { [weak self] in self?.cancelAutoHide() }
 
-        viewModel.onCommitted = { [weak self] in self?.finish(returnFocus: true) }
+        viewModel.onCommitted = { [weak self] in self?.animateCommit() }
         viewModel.onDiscarded = { [weak self] in self?.animateDiscard() }
         viewModel.onClose = { [weak self] in self?.close() }
         viewModel.onContentSizeChanged = { [weak self] in self?.layoutPanel() }
@@ -135,6 +135,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         dismissWorkItem = nil
 
         viewModel.prepareForShow()
+        presentation.commitPhase = .idle
         presentation.mode = mode
         if !panel.isVisible { presentation.isAppeared = false }
         layoutPanel()
@@ -202,6 +203,37 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     private func finish(returnFocus: Bool) {
         hide()
         if returnFocus { activation.returnFocus() }
+    }
+
+    /// Confirm reads as the amount being handed to the project: the label shrinks, the numbers
+    /// change at the bottom of that shrink, then it overshoots and settles before the panel goes.
+    private func animateCommit() {
+        cancelAutoHide()
+        guard !reduceMotion else {
+            viewModel.revealCommittedTotals()
+            finish(returnFocus: true)
+            return
+        }
+
+        presentation.commitPhase = .shrunk
+        after(Tokens.Motion.commitShrink) { [weak self] in
+            guard let self else { return }
+            // The amount flips to zero and the project's total jumps, in one frame.
+            self.viewModel.revealCommittedTotals()
+            self.presentation.commitPhase = .magnified
+            self.after(Tokens.Motion.commitMagnify) {
+                self.presentation.commitPhase = .settled
+                self.after(Tokens.Motion.commitSettle) {
+                    self.finish(returnFocus: true)
+                }
+            }
+        }
+    }
+
+    private func after(_ motion: Tokens.MotionToken, _ body: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + motion.duration) {
+            MainActor.assumeIsolated(body)
+        }
     }
 
     /// Discard reads as "thrown away": the amount collapses and clears, then the panel dismisses.

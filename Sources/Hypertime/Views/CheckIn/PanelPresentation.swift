@@ -19,6 +19,33 @@ final class PanelPresentation {
     var isDiscarding = false
     /// Bumped to trigger the invalid shake.
     var invalidTrigger = 0
+    /// The confirm bounce, as a phase rather than a raw scale: an `.animation(_:value:)` on the
+    /// label picks the curve for the transition into each one. (`withAnimation`'s completion
+    /// handler is no use here — with @Observable it reports "done" in about 2 ms, because the
+    /// body re-evaluates after the transaction has already closed.)
+    enum CommitPhase {
+        case idle, shrunk, magnified, settled
+    }
+
+    var commitPhase: CommitPhase = .idle
+
+    var commitScale: CGFloat {
+        switch commitPhase {
+        case .idle, .settled: return 1
+        case .shrunk: return Tokens.Confirm.shrunkScale
+        case .magnified: return Tokens.Confirm.magnifiedScale
+        }
+    }
+
+    /// The curve for the transition *into* the current phase.
+    func commitAnimation(reduceMotion: Bool) -> Animation? {
+        switch commitPhase {
+        case .idle: return nil
+        case .shrunk: return Tokens.Motion.commitShrink.animation(reduceMotion: reduceMotion)
+        case .magnified: return Tokens.Motion.commitMagnify.animation(reduceMotion: reduceMotion)
+        case .settled: return Tokens.Motion.commitSettle.animation(reduceMotion: reduceMotion)
+        }
+    }
     /// Brief accent flash on commit.
     var isConfirming = false
 

@@ -76,6 +76,11 @@ final class CheckInViewModel {
     var isPaused = false
     var isTracking = false
 
+    /// True from the moment a commit is written until the confirm animation says the numbers may
+    /// catch up. The write is immediate; only the display is held, so nothing is at risk if the
+    /// animation is cut short.
+    private(set) var isCommitting = false
+
     /// Set by the panel controller.
     var onCommitted: (() -> Void)?
     var onDiscarded: (() -> Void)?
@@ -101,6 +106,7 @@ final class CheckInViewModel {
 
     /// Called every time the popup is about to be shown.
     func prepareForShow() {
+        isCommitting = false
         // R-05: the most recently used project is preselected, even on a fresh launch.
         let current = model.currentProject ?? model.projects().first
         query = ""
@@ -123,7 +129,7 @@ final class CheckInViewModel {
     }
 
     func refreshTime() {
-        guard !isEditingTime else { return }
+        guard !isCommitting, !isEditingTime else { return }
         // Idle: no bucket to offer, so the field starts empty (§6.4).
         guard let pending = model.engine.pending else {
             timeText = ""
@@ -133,6 +139,7 @@ final class CheckInViewModel {
     }
 
     func refreshStatus() {
+        guard !isCommitting else { return }
         statusLine = model.statusSummary()
         todayTotalText = model.formatter.string(model.todayTotal(), style: timeStyle)
         isPaused = model.engine.status.isPaused
@@ -140,6 +147,7 @@ final class CheckInViewModel {
     }
 
     func refreshRows() {
+        guard !isCommitting else { return }
         let before = todayRows.count
         todayRows = model.todayRows()
         refreshStatus()
@@ -148,6 +156,7 @@ final class CheckInViewModel {
 
     /// Updates the live totals without rebuilding the row set (keeps editing stable).
     private func refreshTotalsOnly() {
+        guard !isCommitting else { return }
         let fresh = model.todayRows()
         if fresh.count != todayRows.count || zip(fresh, todayRows).contains(where: { $0.project.id != $1.project.id }) {
             todayRows = fresh
@@ -308,13 +317,26 @@ final class CheckInViewModel {
             focus = .time
             return
         }
+        guard !isCommitting else { return }                  // a second ↩ mid-animation
         guard model.commit(name: name, timeText: timeText) else {
             timeFieldInvalid = true
             return
         }
-        isEditingTime = false
+        // Written already; the panel now runs the confirm bounce and calls back below.
+        isCommitting = true
         isProjectListOpen = false
         onCommitted?()
+    }
+
+    /// Called by the confirm animation at the point the numbers should change: the amount drops
+    /// to zero and the committed project's total jumps, in the same frame.
+    func revealCommittedTotals() {
+        isCommitting = false
+        isEditingTime = false
+        isTimeAccepted = false
+        refreshTime()
+        refreshRows()
+        refreshStatus()
     }
 
     func discard() {

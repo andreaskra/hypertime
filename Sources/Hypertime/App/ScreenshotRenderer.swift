@@ -67,6 +67,14 @@ enum ScreenshotRenderer {
         }
         render("popup-row-focused", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
 
+        let confirming = PanelPresentation()
+        confirming.isAppeared = true
+        confirming.mode = .focused
+        confirming.commitPhase = .magnified
+        checkIn.prepareForShow()
+        checkIn.timeText = "0:12:34"
+        render("popup-confirm-bounce", AnyView(CheckInView(viewModel: checkIn, presentation: confirming)), in: url)
+
         let passive = PanelPresentation()
         passive.isAppeared = true
         passive.mode = .passive

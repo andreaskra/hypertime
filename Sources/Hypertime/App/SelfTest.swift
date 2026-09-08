@@ -142,7 +142,16 @@ enum SelfTest {
         let stored = (try? model.store.seconds(project: project?.id ?? UUID(), day: today)) ?? 0
         check("commit added the parsed time", stored == 5400, "\(stored)")
         check("commit started tracking", model.engine.status.isTracking)
-        check("commit started the dismiss animation", !panel.presentation.isAppeared)
+        // The write happens immediately; only the display is held, so the amount flips to zero
+        // and the project's total jumps together at the bottom of the bounce.
+        check("commit holds the display until the bounce says so",
+              panel.presentation.isAppeared && viewModel.isCommitting)
+        check("…with the amount still reading what was entered", viewModel.timeText == "1h30", viewModel.timeText)
+        viewModel.revealCommittedTotals()
+        check("the bounce cue flips the amount to zero", viewModel.timeText.hasPrefix("0:00"), viewModel.timeText)
+        check("…and the project's total has caught up",
+              viewModel.todayRows.first { $0.project.id == project?.id }?.seconds == 5400,
+              "\(viewModel.todayRows.first { $0.project.id == project?.id }?.seconds ?? -1)")
 
         // Pending, discard and totals.
         model.engine.tick()
@@ -219,8 +228,9 @@ enum SelfTest {
         check("…but still remembers the project", waiting.currentProjectID == resumeProject?.id)
         model.settings.startTrackingOnLaunch = true
 
-        // The dismiss is animated; give it a run loop turn before checking the window is gone.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+        // The confirm bounce plus the dismiss is 480 ms; give it room before checking the
+        // window is gone. If this ever needs raising, the animation has outgrown its budget.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             check("panel is ordered out once the dismiss finishes", !panel.isVisible)
             // The menu bar only places the status item once launching is over, which is exactly
             // why the popup used to land in a corner. Everything below needs a placed item.
@@ -256,8 +266,36 @@ enum SelfTest {
                   String(format: "top %.0f, menu bar bottom %.0f", frame.maxY, screen.visibleFrame.maxY))
         }
 
-        FileHandle.standardError.write(Data("self-test: \(failures == 0 ? "PASS" : "FAIL (\(failures))")\n".utf8))
-        exit(failures == 0 ? 0 : 1)
+        measureConfirmAnimation(panel)
+    }
+
+    /// Confirm bounce plus dismiss, measured end to end with a free run loop. The design budget
+    /// is 500 ms; the bound is looser so machine load cannot fail it, but the figure is printed.
+    private static func measureConfirmAnimation(_ panel: CheckInPanelController) {
+        let viewModel = panel.viewModel
+        viewModel.projectTextChanged("Self Test")
+        viewModel.timeTextChanged("5m")
+        let started = Date()
+        viewModel.commit()
+        pollUntilHidden(panel, startedAt: started, attempt: 0)
+    }
+
+    private static func pollUntilHidden(_ panel: CheckInPanelController, startedAt: Date, attempt: Int) {
+        guard panel.isVisible, attempt < 100 else {
+            let elapsed = Date().timeIntervalSince(startedAt) * 1000
+            // The upper bound is the design budget with slack for machine load; the lower one
+            // catches the bounce being skipped entirely, which is how this first went wrong.
+            check("confirm animation closes the popup inside its budget", elapsed < 700,
+                  String(format: "%.0f ms, budget 500 ms", elapsed))
+            check("confirm animation actually plays its phases", elapsed > 300,
+                  String(format: "%.0f ms, three phases are 360 ms", elapsed))
+            check("the popup did close", !panel.isVisible)
+            FileHandle.standardError.write(Data("self-test: \(failures == 0 ? "PASS" : "FAIL (\(failures))")\n".utf8))
+            exit(failures == 0 ? 0 : 1)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            pollUntilHidden(panel, startedAt: startedAt, attempt: attempt + 1)
+        }
     }
 
     /// The Dock icon: present in the bundle, and actually masked to the macOS icon shape rather
