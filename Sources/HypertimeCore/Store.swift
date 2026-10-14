@@ -15,6 +15,7 @@ public enum StoreChange: String, Sendable, Hashable, CaseIterable {
     case projects
     case entries
     case engineState
+    case tasks
 }
 
 /// Engine state persisted across launches and crashes (§5.5).
@@ -176,6 +177,28 @@ public final class Store: @unchecked Sendable {
                 );
                 """)
         }
+        migrator.registerMigration("v2-tasks") { db in
+            try db.execute(sql: """
+                CREATE TABLE task (
+                  id            TEXT PRIMARY KEY,
+                  project_id    TEXT NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+                  title         TEXT NOT NULL,
+                  created_at    REAL NOT NULL,
+                  completed_at  REAL,
+                  timer_seconds INTEGER,
+                  sort_order    REAL NOT NULL DEFAULT 0
+                );
+                CREATE INDEX task_project ON task(project_id);
+                CREATE TABLE task_entry (
+                  task_id       TEXT NOT NULL REFERENCES task(id) ON DELETE CASCADE,
+                  day           TEXT NOT NULL,
+                  seconds       INTEGER NOT NULL DEFAULT 0 CHECK (seconds >= 0 AND seconds <= 86400),
+                  updated_at    REAL NOT NULL,
+                  PRIMARY KEY (task_id, day)
+                );
+                CREATE INDEX task_entry_day ON task_entry(day);
+                """)
+        }
         return migrator
     }
 
@@ -200,10 +223,10 @@ public final class Store: @unchecked Sendable {
     }
 
     /// Trims and caps a name the way `findOrCreateProject` stores it.
-    public static func normalise(name: String) -> String {
+    public static func normalise(name: String, limit: Int = maxProjectNameLength) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > maxProjectNameLength else { return trimmed }
-        return String(trimmed.prefix(maxProjectNameLength))
+        guard trimmed.count > limit else { return trimmed }
+        return String(trimmed.prefix(limit))
     }
 
     public func project(named name: String) throws -> Project? {
@@ -355,6 +378,169 @@ public final class Store: @unchecked Sendable {
             try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(seconds), 0) FROM day_entry WHERE day >= ? AND day <= ?",
                              arguments: [range.lowerBound.isoString, range.upperBound.isoString]) ?? 0
         }
+    }
+
+    // MARK: - Tasks
+
+    /// Open tasks first (oldest first so the list is stable), then the rest by completion.
+    public func tasks(includeCompleted: Bool = false) throws -> [TaskItem] {
+        try dbQueue.read { db in
+            let sql = includeCompleted
+                ? "SELECT * FROM task ORDER BY completed_at IS NULL DESC, sort_order, created_at"
+                : "SELECT * FROM task WHERE completed_at IS NULL ORDER BY sort_order, created_at"
+            return try Row.fetchAll(db, sql: sql).map(Self.task)
+        }
+    }
+
+    public func task(id: UUID) throws -> TaskItem? {
+        try dbQueue.read { db in
+            try Row.fetchOne(db, sql: "SELECT * FROM task WHERE id = ?", arguments: [id.uuidString])
+                .map(Self.task)
+        }
+    }
+
+    public func tasks(project: UUID, includeCompleted: Bool = false) throws -> [TaskItem] {
+        try tasks(includeCompleted: includeCompleted).filter { $0.projectID == project }
+    }
+
+    @discardableResult
+    public func createTask(projectID: UUID, title: String, timerSeconds: Seconds? = nil) throws -> TaskItem {
+        let trimmed = Self.normalise(name: title, limit: maxTaskTitleLength)
+        guard !trimmed.isEmpty else { throw StoreError.emptyName }
+        let order = try dbQueue.read { db in
+            try Double.fetchOne(db, sql: "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM task") ?? 1
+        }
+        let task = TaskItem(projectID: projectID, title: trimmed, createdAt: clock.now(),
+                            timerSeconds: timerSeconds, sortOrder: order)
+        try write(.tasks) { db in
+            try db.execute(sql: """
+                INSERT INTO task (id, project_id, title, created_at, completed_at, timer_seconds, sort_order)
+                VALUES (?, ?, ?, ?, NULL, ?, ?)
+                """,
+                arguments: [task.id.uuidString, projectID.uuidString, task.title,
+                            task.createdAt.timeIntervalSince1970, timerSeconds, order])
+            try self.log(db, kind: "task.create", payload: ["id": task.id.uuidString, "title": task.title])
+        }
+        return task
+    }
+
+    public func updateTask(id: UUID, title: String? = nil, projectID: UUID? = nil) throws {
+        var trimmed: String?
+        if let title {
+            trimmed = Self.normalise(name: title, limit: maxTaskTitleLength)
+            guard !(trimmed ?? "").isEmpty else { throw StoreError.emptyName }
+        }
+        try write(.tasks) { db in
+            if let trimmed {
+                try db.execute(sql: "UPDATE task SET title = ? WHERE id = ?", arguments: [trimmed, id.uuidString])
+            }
+            if let projectID {
+                try db.execute(sql: "UPDATE task SET project_id = ? WHERE id = ?",
+                               arguments: [projectID.uuidString, id.uuidString])
+            }
+            try self.log(db, kind: "task.update", payload: ["id": id.uuidString])
+        }
+    }
+
+    /// nil clears the countdown.
+    public func setTaskTimer(id: UUID, seconds: Seconds?) throws {
+        try write(.tasks) { db in
+            try db.execute(sql: "UPDATE task SET timer_seconds = ? WHERE id = ?",
+                           arguments: [seconds, id.uuidString])
+            try self.log(db, kind: "task.timer", payload: ["id": id.uuidString, "seconds": seconds.map(String.init) ?? ""])
+        }
+    }
+
+    public func completeTask(id: UUID) throws {
+        let now = clock.now().timeIntervalSince1970
+        try write(.tasks) { db in
+            try db.execute(sql: "UPDATE task SET completed_at = ? WHERE id = ?", arguments: [now, id.uuidString])
+            try self.log(db, kind: "task.complete", payload: ["id": id.uuidString])
+        }
+    }
+
+    public func reopenTask(id: UUID) throws {
+        try write(.tasks) { db in
+            try db.execute(sql: "UPDATE task SET completed_at = NULL WHERE id = ?", arguments: [id.uuidString])
+            try self.log(db, kind: "task.reopen", payload: ["id": id.uuidString])
+        }
+    }
+
+    /// Deleting a task drops its own entries but leaves the project's totals alone: the time was
+    /// really worked, only its attribution to a task is gone (TD-05).
+    public func deleteTask(id: UUID) throws {
+        try write(.tasks) { db in
+            try db.execute(sql: "DELETE FROM task WHERE id = ?", arguments: [id.uuidString])
+            try self.log(db, kind: "task.delete", payload: ["id": id.uuidString])
+        }
+    }
+
+    // MARK: - Task entries
+
+    /// Books time to a task *and* to its project in one transaction — a task's seconds are part
+    /// of its project's number, never extra (TD-02).
+    public func addTaskSeconds(task: UUID, project: UUID, day: LocalDate, _ delta: Seconds) throws {
+        guard delta != 0 else { return }
+        let now = clock.now().timeIntervalSince1970
+        try write([.tasks, .entries]) { db in
+            let current = try Int.fetchOne(db, sql: "SELECT seconds FROM task_entry WHERE task_id = ? AND day = ?",
+                                           arguments: [task.uuidString, day.isoString]) ?? 0
+            try db.execute(sql: """
+                INSERT INTO task_entry (task_id, day, seconds, updated_at) VALUES (?, ?, ?, ?)
+                ON CONFLICT(task_id, day) DO UPDATE SET seconds = excluded.seconds, updated_at = excluded.updated_at
+                """, arguments: [task.uuidString, day.isoString,
+                                 min(max(current + delta, 0), secondsPerDay), now])
+
+            let projectNow = try Int.fetchOne(db, sql: "SELECT seconds FROM day_entry WHERE project_id = ? AND day = ?",
+                                              arguments: [project.uuidString, day.isoString]) ?? 0
+            try db.execute(sql: """
+                INSERT INTO day_entry (project_id, day, seconds, updated_at) VALUES (?, ?, ?, ?)
+                ON CONFLICT(project_id, day) DO UPDATE SET seconds = excluded.seconds, updated_at = excluded.updated_at
+                """, arguments: [project.uuidString, day.isoString,
+                                 min(max(projectNow + delta, 0), secondsPerDay), now])
+            try self.log(db, kind: "task.add", payload: ["task": task.uuidString, "project": project.uuidString,
+                                                          "day": day.isoString, "delta": String(delta)])
+        }
+    }
+
+    public func taskSeconds(task: UUID, day: LocalDate) throws -> Seconds {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT seconds FROM task_entry WHERE task_id = ? AND day = ?",
+                             arguments: [task.uuidString, day.isoString]) ?? 0
+        }
+    }
+
+    /// Everything the task has ever accrued — what a timer counts against.
+    public func taskSeconds(task: UUID) throws -> Seconds {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(seconds), 0) FROM task_entry WHERE task_id = ?",
+                             arguments: [task.uuidString]) ?? 0
+        }
+    }
+
+    /// Per-task totals inside a range, for the indented rows under each project.
+    public func taskTotals(in range: ClosedRange<LocalDate>) throws -> [UUID: Seconds] {
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT task_id, SUM(seconds) AS total FROM task_entry
+                WHERE day >= ? AND day <= ? AND seconds > 0 GROUP BY task_id
+                """, arguments: [range.lowerBound.isoString, range.upperBound.isoString])
+            return rows.reduce(into: [:]) { result, row in
+                if let id = UUID(uuidString: row["task_id"]) { result[id] = row["total"] }
+            }
+        }
+    }
+
+    private static func task(_ row: Row) -> TaskItem {
+        TaskItem(
+            id: UUID(uuidString: row["id"]) ?? UUID(),
+            projectID: UUID(uuidString: row["project_id"]) ?? UUID(),
+            title: row["title"],
+            createdAt: Date(timeIntervalSince1970: row["created_at"]),
+            completedAt: (row["completed_at"] as Double?).map(Date.init(timeIntervalSince1970:)),
+            timerSeconds: row["timer_seconds"],
+            sortOrder: row["sort_order"]
+        )
     }
 
     // MARK: - Engine state

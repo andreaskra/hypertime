@@ -132,6 +132,43 @@ public struct DayEntry: Hashable, Codable, Sendable {
     }
 }
 
+/// A named piece of work inside a project (Phase 4). Open tasks carry over between days; the
+/// time they accrue is a subdivision of their project's time, never an addition to it (TD-02).
+///
+/// Named `TaskItem` rather than `Task` so it never shadows Swift concurrency's `Task` in files
+/// that import this module. The database table and the UI both still say "task".
+public struct TaskItem: Identifiable, Hashable, Codable, Sendable {
+    public let id: UUID
+    public var projectID: UUID
+    public var title: String
+    public var createdAt: Date
+    public var completedAt: Date?
+    /// Countdown the user gave themselves, or nil for an untimed task.
+    public var timerSeconds: Seconds?
+    public var sortOrder: Double
+
+    public var isComplete: Bool { completedAt != nil }
+
+    public init(id: UUID = UUID(),
+                projectID: UUID,
+                title: String,
+                createdAt: Date,
+                completedAt: Date? = nil,
+                timerSeconds: Seconds? = nil,
+                sortOrder: Double = 0) {
+        self.id = id
+        self.projectID = projectID
+        self.title = title
+        self.createdAt = createdAt
+        self.completedAt = completedAt
+        self.timerSeconds = timerSeconds
+        self.sortOrder = sortOrder
+    }
+}
+
+/// Longest task title we store, for the same reason project names are capped.
+public let maxTaskTitleLength = 200
+
 public enum PauseReason: String, Codable, Sendable {
     case manual, systemSleep, screenLock
 }

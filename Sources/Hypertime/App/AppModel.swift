@@ -39,6 +39,7 @@ final class AppModel {
     var onTick: (() -> Void)?
     var onStatusChanged: (() -> Void)?
     var onDataChanged: (() -> Void)?
+    var onTaskTimerExpired: ((UUID) -> Void)?
 
     init(arguments: [String] = CommandLine.arguments) throws {
         isDemo = arguments.contains("--seed-demo") || arguments.contains("--screenshots")
@@ -89,6 +90,8 @@ final class AppModel {
                 case .tick: self.onTick?()
                 case .statusChanged: self.onStatusChanged?(); self.onDataChanged?()
                 case .dataChanged: self.onDataChanged?()
+                case .tasksChanged: self.onDataChanged?()
+                case .taskTimerExpired(let id): self.onTaskTimerExpired?(id)
                 }
             }
         }

@@ -5,8 +5,12 @@ public enum TrackingEvent: Sendable, Equatable {
     case tick(PendingTime?)
     case checkInDue
     case pauseEnded
+    /// A timed task reached zero and the user has to decide (T-12).
+    case taskTimerExpired(UUID)
     /// Stored totals changed (commit, manual edit, auto-commit).
     case dataChanged
+    /// Tasks were created, finished, deleted or switched.
+    case tasksChanged
 }
 
 /// The tracking state machine (§5.5). Time accrues into an in-memory `pending` bucket and is
@@ -23,6 +27,15 @@ public final class TrackingEngine {
     public private(set) var currentProjectID: UUID?
     /// Unattributed time since the last commit (D-13).
     public private(set) var pending: PendingTime?
+
+    /// The task that owns the clock, or nil when time flows into the pending bucket (TD-01).
+    public private(set) var activeTaskID: UUID?
+    private var taskProjectID: UUID?
+    private var taskBaselineSeconds: Seconds = 0
+    private var taskAccruedSinceStart: Seconds = 0
+    private var taskUnwritten: Seconds = 0
+    private var taskFraction: Double = 0
+    private var taskTimerFired = false
 
     private var lastTickAt: Date
     private var lastCommitAt: Date
@@ -55,7 +68,24 @@ public final class TrackingEngine {
         if let pending, pending.projectID == project, day == today {
             total += pending.seconds
         }
+        if taskProjectID == project, day == today { total += taskUnwritten }
         return min(total, secondsPerDay)
+    }
+
+    /// Everything the running task has accrued, including seconds not yet written.
+    public var activeTaskSeconds: Seconds { taskBaselineSeconds + taskAccruedSinceStart }
+
+    /// Seconds left on the running task's timer; negative once it has overshot.
+    public func taskRemaining(_ task: TaskItem) -> Seconds? {
+        guard let timer = task.timerSeconds else { return nil }
+        let elapsed = task.id == activeTaskID ? activeTaskSeconds : ((try? store.taskSeconds(task: task.id)) ?? 0)
+        return timer - elapsed
+    }
+
+    /// Live total for a task, so the list does not jump backwards between flushes.
+    public func liveTaskSeconds(_ taskID: UUID) -> Seconds {
+        let stored = (try? store.taskSeconds(task: taskID)) ?? 0
+        return taskID == activeTaskID ? stored + taskUnwritten : stored
     }
 
     /// Date at which the next check-in is due, or nil when check-ins are off.
@@ -79,6 +109,71 @@ public final class TrackingEngine {
         lastTickAt = now
         fraction = 0
         setStatus(.tracking(projectID: projectID, since: now))
+    }
+
+    // MARK: - Tasks (TD-01)
+
+    /// Hands the clock to a task. The pending bucket is left exactly as it is: starting a task
+    /// does not claim time that was accruing before it (TA-03).
+    public func startTask(_ task: TaskItem) {
+        flushTask()
+        activeTaskID = task.id
+        taskProjectID = task.projectID
+        taskBaselineSeconds = (try? store.taskSeconds(task: task.id)) ?? 0
+        taskAccruedSinceStart = 0
+        taskUnwritten = 0
+        taskFraction = 0
+        taskTimerFired = false
+        currentProjectID = task.projectID
+        lastTickAt = clock.now()
+        try? store.touchProject(id: task.projectID)
+        setStatus(.tracking(projectID: task.projectID, since: clock.now()))
+        broadcaster.send(.tasksChanged)
+    }
+
+    /// Stops the running task. Nothing is running afterwards: the bucket takes over again (TA-01).
+    public func stopTask() {
+        guard activeTaskID != nil else { return }
+        flushTask()
+        activeTaskID = nil
+        taskProjectID = nil
+        taskAccruedSinceStart = 0
+        taskBaselineSeconds = 0
+        taskFraction = 0
+        taskTimerFired = false
+        lastTickAt = clock.now()
+        // The interval *resumes* when the task stops (TD-03): it does not fire the moment the
+        // task ends just because it went unasked throughout.
+        lastCheckInShownAt = clock.now()
+        persist(force: true)
+        broadcaster.send(.tasksChanged)
+        broadcaster.send(.dataChanged)
+    }
+
+    /// Finishes the task and stops tracking it; its time stays where it was booked (T-04).
+    public func finishTask(_ taskID: UUID) {
+        if taskID == activeTaskID { flushTask() }
+        try? store.completeTask(id: taskID)
+        if taskID == activeTaskID { stopTask() }
+        broadcaster.send(.tasksChanged)
+        broadcaster.send(.dataChanged)
+    }
+
+    /// The task is going away; drop the clock without booking anything further.
+    public func taskDeleted(_ taskID: UUID) {
+        if taskID == activeTaskID {
+            flushTask()
+            stopTask()
+        }
+        broadcaster.send(.tasksChanged)
+        broadcaster.send(.dataChanged)
+    }
+
+    /// Writes whatever the running task has accrued but not yet stored.
+    private func flushTask() {
+        guard let taskID = activeTaskID, let projectID = taskProjectID, taskUnwritten > 0 else { return }
+        try? store.addTaskSeconds(task: taskID, project: projectID, day: today, taskUnwritten)
+        taskUnwritten = 0
     }
 
     /// Adds `seconds` to today's total for `projectID`, resets the bucket and starts tracking (D-08).
@@ -118,6 +213,7 @@ public final class TrackingEngine {
     /// Pauses tracking. The bucket is preserved untouched (A-07).
     public func pause(until: Date, reason: PauseReason) {
         guard let projectID = currentProjectID else { return }
+        flushTask()
         lastTickAt = clock.now()
         setStatus(.paused(projectID: projectID, until: until, reason: reason))
     }
@@ -130,6 +226,11 @@ public final class TrackingEngine {
     /// The project is about to be deleted: drop any time attributed to it and stop tracking it.
     /// Its pending bucket is discarded rather than committed — the entries go away with it.
     public func projectDeleted(_ projectID: UUID) {
+        if taskProjectID == projectID {
+            taskUnwritten = 0
+            activeTaskID = nil
+            taskProjectID = nil
+        }
         if pending?.projectID == projectID {
             pending = nil
             fraction = 0
@@ -146,6 +247,9 @@ public final class TrackingEngine {
 
     /// Flushes pending time and goes idle (quit, R-15).
     public func stop() {
+        flushTask()
+        activeTaskID = nil
+        taskProjectID = nil
         autoCommitPending()
         pending = nil
         lastTickAt = clock.now()
@@ -195,17 +299,28 @@ public final class TrackingEngine {
             let midnight = currentDay.startOfDay(calendar: clock.calendar)
             let before = max(midnight.timeIntervalSince(lastTickAt), 0)
             let after = max(now.timeIntervalSince(midnight), 0)
-            accrue(before)
-            autoCommitPending(day: previousDay, since: midnight)
-            accrue(after)
+            if activeTaskID != nil {
+                accrueTask(before)
+                flushTask(day: previousDay)
+                accrueTask(after)
+            } else {
+                accrue(before)
+                autoCommitPending(day: previousDay, since: midnight)
+                accrue(after)
+            }
+        } else if activeTaskID != nil {
+            accrueTask(delta)
         } else {
             accrue(delta)
         }
 
         lastTickAt = now
-        checkCheckIn(now: now)
+        checkTaskTimer()
+        // A running task has already answered "what are you working on?" (TD-03).
+        if activeTaskID == nil { checkCheckIn(now: now) }
 
         if now.timeIntervalSince(lastPersistAt) >= TimeInterval(settings.flushIntervalSeconds) {
+            flushTask()
             persist(force: true)
         }
         broadcaster.send(.tick(pending))
@@ -223,6 +338,32 @@ public final class TrackingEngine {
             let updated = min((pending?.seconds ?? 0) + whole, secondsPerDay)
             pending?.seconds = updated
         }
+    }
+
+    private func accrueTask(_ delta: TimeInterval) {
+        guard delta > 0, activeTaskID != nil else { return }
+        taskFraction += delta
+        let whole = Int(taskFraction)
+        guard whole > 0 else { return }
+        taskFraction -= Double(whole)
+        taskAccruedSinceStart += whole
+        taskUnwritten += whole
+    }
+
+    /// Fires once when a timed task reaches zero; "keep working" clears the timer so it stays quiet.
+    private func checkTaskTimer() {
+        guard !taskTimerFired, let taskID = activeTaskID,
+              let task = try? store.task(id: taskID), let timer = task.timerSeconds,
+              activeTaskSeconds >= timer else { return }
+        taskTimerFired = true
+        flushTask()
+        broadcaster.send(.taskTimerExpired(taskID))
+    }
+
+    private func flushTask(day: LocalDate) {
+        guard let taskID = activeTaskID, let projectID = taskProjectID, taskUnwritten > 0 else { return }
+        try? store.addTaskSeconds(task: taskID, project: projectID, day: day, taskUnwritten)
+        taskUnwritten = 0
     }
 
     private func checkCheckIn(now: Date) {
@@ -281,6 +422,8 @@ public final class TrackingEngine {
         }
 
         pending = nil
+        activeTaskID = nil                              // picking a task back up is a decision (T-09)
+        taskProjectID = nil
         lastTickAt = clock.now()
 
         // Time while the app was not running is never work time, so tracking always restarts
