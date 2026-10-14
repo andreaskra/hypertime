@@ -134,6 +134,14 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
             guard let self else { return }
             self.onMenuRequested?(self.hoverView)
         }
+        viewModel.onTaskCompleting = { [weak self] in
+            guard let self else { return }
+            self.after(Tokens.Motion.taskComplete) { self.viewModel.commitFinish() }
+        }
+        viewModel.onTaskDeleting = { [weak self] in
+            guard let self else { return }
+            self.after(Tokens.Motion.taskDelete) { self.viewModel.commitDelete() }
+        }
         viewModel.onDayPickerRequested = { [weak self] in
             guard let self else { return }
             self.onDayPickerRequested?(self.hoverView)
@@ -259,6 +267,12 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + Tokens.Motion.discardCollapse.duration) { [weak self] in
             self?.finish(returnFocus: true)
         }
+    }
+
+    /// A timer reaching zero is an alert, not a nudge: it takes the keyboard (T-12).
+    func showTimerExpired(_ taskID: UUID) {
+        show(mode: .focused)
+        viewModel.expiredTaskID = taskID
     }
 
     /// Called by the 1 s timer while visible.

@@ -73,6 +73,10 @@ struct TodayListView: View {
                     VStack(spacing: 0) {
                         ForEach(viewModel.todayRows) { row in
                             TodayRowView(viewModel: viewModel, row: row)
+                            // A task's time is part of its project's number, shown underneath it.
+                            ForEach(viewModel.taskRows(under: row.project.id), id: \.task.id) { entry in
+                                TaskBreakdownRow(viewModel: viewModel, task: entry.task, seconds: entry.seconds)
+                            }
                         }
                     }
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("todayScroll")) } action: { rect in
@@ -129,6 +133,34 @@ private struct TodayRowView: View {
         if viewModel.isPaused { return Tokens.Palette.pausedIndicator.color }
         if viewModel.isTracking { return Tokens.Palette.trackingIndicator.color }
         return Tokens.Palette.idleIndicator.color
+    }
+}
+
+/// A task indented under its project, with the share of the project's time it accounts for.
+private struct TaskBreakdownRow: View {
+    @Bindable var viewModel: CheckInViewModel
+    let task: TaskItem
+    let seconds: Seconds
+
+    var body: some View {
+        HStack(spacing: Tokens.Space.s2) {
+            Rectangle()
+                .fill(Tokens.Palette.separator.color)
+                .frame(width: 1, height: 10)
+                .padding(.leading, Tokens.Space.s3)
+            Text(task.title)
+                .font(Tokens.Typography.caption)
+                .foregroundStyle(viewModel.isRunning(task)
+                                 ? Tokens.Palette.accent
+                                 : Tokens.Palette.textSecondary.color)
+                .lineLimit(1)
+            Spacer(minLength: Tokens.Space.s2)
+            Text(viewModel.display(seconds))
+                .font(Tokens.Typography.keyboardHint)
+                .foregroundStyle(Tokens.Palette.textSecondary.color)
+        }
+        .padding(.horizontal, Tokens.Space.rowInset)
+        .frame(height: 18)
     }
 }
 

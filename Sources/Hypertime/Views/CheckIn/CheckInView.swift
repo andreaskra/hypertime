@@ -34,6 +34,15 @@ struct CheckInView: View {
 
                 AmountField(viewModel: viewModel, presentation: presentation)
 
+                if !viewModel.tasks.isEmpty || viewModel.isAddingTask || viewModel.expiredTask != nil {
+                    VStack(alignment: .leading, spacing: Tokens.Space.s2) {
+                        Hairline()
+                        TaskListView(viewModel: viewModel)
+                            .opacity(viewModel.showsProjectList ? 0.45 : 1)
+                            .allowsHitTesting(!viewModel.showsProjectList)
+                    }
+                }
+
                 if hasTodayList {
                     VStack(alignment: .leading, spacing: Tokens.Space.s3) {
                         Hairline()

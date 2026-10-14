@@ -120,6 +120,37 @@ final class AppModel {
         return try? store.project(id: id)
     }
 
+    // MARK: - Tasks
+
+    func openTasks() -> [TaskItem] { (try? store.tasks()) ?? [] }
+
+    func task(_ id: UUID) -> TaskItem? { try? store.task(id: id) }
+
+    /// Tasks with time inside a day, keyed by project, for the indented breakdown rows.
+    func taskBreakdown(for day: LocalDate) -> [UUID: [(task: TaskItem, seconds: Seconds)]] {
+        let totals = (try? store.taskTotals(in: day...day)) ?? [:]
+        guard !totals.isEmpty else { return [:] }
+        let all = (try? store.tasks(includeCompleted: true)) ?? []
+        var result: [UUID: [(TaskItem, Seconds)]] = [:]
+        for task in all {
+            var seconds = totals[task.id] ?? 0
+            if task.id == engine.activeTaskID, day == today {
+                seconds = engine.liveTaskSeconds(task.id)
+            }
+            guard seconds > 0 else { continue }
+            result[task.projectID, default: []].append((task, seconds))
+        }
+        return result.mapValues { $0.sorted { $0.1 > $1.1 } }
+    }
+
+    @discardableResult
+    func createTask(title: String, projectName: String) -> TaskItem? {
+        let name = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let project = name.isEmpty ? currentProject : try? store.findOrCreateProject(named: name)
+        else { return nil }
+        return try? store.createTask(projectID: project.id, title: title)
+    }
+
     func projects() -> [Project] {
         (try? store.projects()) ?? []
     }

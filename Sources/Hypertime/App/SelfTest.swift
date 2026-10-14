@@ -227,6 +227,51 @@ enum SelfTest {
         viewModel.projectTextChanged("")
         check("idle with no project named has nothing to start", !viewModel.canToggleTracking)
 
+        // Tasks: created under the current project, click to run, checkmark to finish.
+        viewModel.projectTextChanged("Self Test")
+        viewModel.addTask()
+        viewModel.newTaskTitle = "Write the spec"
+        viewModel.commitNewTask()
+        check("the + button creates a task", viewModel.tasks.contains { $0.title == "Write the spec" })
+        guard let task = viewModel.tasks.first(where: { $0.title == "Write the spec" }) else {
+            check("task available", false)
+            return
+        }
+        check("…under the project the popup is showing", task.projectID == project?.id)
+
+        viewModel.toggleTask(task)
+        check("clicking a task hands it the clock", viewModel.isRunning(task))
+        check("…and the bucket stops accruing", model.engine.activeTaskID == task.id)
+        let bucketBefore = model.engine.pendingSeconds
+        model.engine.tick()
+        check("…leaving the pending bucket alone", model.engine.pendingSeconds == bucketBefore)
+
+        viewModel.toggleTask(task)
+        check("clicking it again pauses it", !viewModel.isRunning(task) && model.engine.activeTaskID == nil)
+
+        viewModel.setTimer(task, text: "25m")
+        check("a timer can be set from the menu",
+              model.task(task.id)?.timerSeconds == 1500, "\(model.task(task.id)?.timerSeconds ?? -1)")
+        check("…and shows as remaining", viewModel.remainingText(for: model.task(task.id)!) != nil)
+        viewModel.clearTimer(model.task(task.id)!)
+        check("…and can be cleared", model.task(task.id)?.timerSeconds == nil)
+
+        viewModel.finishTask(task)
+        check("finishing animates before it commits", viewModel.completingTaskID == task.id)
+        viewModel.commitFinish()
+        check("…then the task leaves the list", !viewModel.tasks.contains { $0.id == task.id })
+        check("…and is marked complete", model.task(task.id)?.isComplete == true)
+
+        viewModel.addTask()
+        viewModel.newTaskTitle = "Doomed"
+        viewModel.commitNewTask()
+        if let doomed = viewModel.tasks.first(where: { $0.title == "Doomed" }) {
+            viewModel.deleteTask(doomed)
+            check("deleting animates before it commits", viewModel.deletingTaskID == doomed.id)
+            viewModel.commitDelete()
+            check("…then the task is gone", model.task(doomed.id) == nil)
+        }
+
         // The day list steps back and forward, and edits land on the day being shown.
         let yesterday = model.day(model.today, offsetBy: -1)
         viewModel.prepareForShow()

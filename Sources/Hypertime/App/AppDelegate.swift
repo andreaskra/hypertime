@@ -192,6 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         model.onCheckInDue = { [weak self] in self?.panel.show(mode: .passive) }
         model.onPauseEnded = { [weak self] in self?.panel.show(mode: .passive) }
+        model.onTaskTimerExpired = { [weak self] taskID in self?.panel.showTimerExpired(taskID) }
         model.onTick = { [weak self] in
             self?.panel.tick()
             self?.statusItem.refresh()

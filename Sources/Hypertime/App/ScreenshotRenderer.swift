@@ -75,6 +75,30 @@ enum ScreenshotRenderer {
         checkIn.timeText = "0:12:34"
         render("popup-confirm-bounce", AnyView(CheckInView(viewModel: checkIn, presentation: confirming)), in: url)
 
+        // Tasks: one running with a timer, one plain, plus the expiry alert.
+        if let project = model.projects().first {
+            let a = try? model.store.createTask(projectID: project.id, title: "Write the Phase 4 spec", timerSeconds: 1500)
+            _ = try? model.store.createTask(projectID: project.id, title: "Review the artboards")
+            _ = try? model.store.createTask(projectID: project.id, title: "Ship the release")
+            if let a {
+                // Bank the time first, so the countdown reads against it rather than from full.
+                try? model.store.addTaskSeconds(task: a.id, project: project.id, day: model.today, 540)
+                model.engine.startTask(a)
+            }
+            checkIn.prepareForShow()
+            checkIn.timeText = "0:12:34"
+            render("popup-tasks", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+
+            if let a {
+                checkIn.expiredTaskID = a.id
+                render("popup-task-timer", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+                checkIn.expiredTaskID = nil
+            }
+            model.engine.stopTask()
+            for task in model.openTasks() { try? model.store.deleteTask(id: task.id) }
+            checkIn.prepareForShow()
+        }
+
         let passive = PanelPresentation()
         passive.isAppeared = true
         passive.mode = .passive

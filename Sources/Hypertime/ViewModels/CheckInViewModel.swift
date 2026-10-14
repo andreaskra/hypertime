@@ -63,6 +63,16 @@ final class CheckInViewModel {
     var todayRows: [ReportRow] = []
     var invalidTotalRow: UUID?
 
+    // Tasks (Phase 4)
+    var tasks: [TaskItem] = []
+    var isAddingTask = false
+    var newTaskTitle = ""
+    /// Rows mid-animation: completing slides out, deleting shrinks away.
+    var completingTaskID: UUID?
+    var deletingTaskID: UUID?
+    /// The task whose timer just reached zero, which the popup asks about (T-12).
+    var expiredTaskID: UUID?
+
     // Chrome
     var focus: CheckInFocus = .none {
         didSet {
@@ -99,6 +109,10 @@ final class CheckInViewModel {
     var onPauseRequested: (() -> Void)?
     var onMenuRequested: (() -> Void)?
     var onDayPickerRequested: (() -> Void)?
+    /// The panel owns animation timing; it calls `commitFinish`/`commitDelete` when the row has
+    /// finished playing out.
+    var onTaskCompleting: (() -> Void)?
+    var onTaskDeleting: (() -> Void)?
 
     init(model: AppModel) {
         self.model = model
@@ -130,6 +144,7 @@ final class CheckInViewModel {
         isProjectListOpen = false
         refreshMatches(preselect: current?.id)
         refreshTime()
+        refreshTasks()
         refreshRows()
         focus = .none
     }
@@ -139,6 +154,7 @@ final class CheckInViewModel {
         refreshTime()
         refreshStatus()
         refreshTotalsOnly()
+        if tasks.contains(where: { isRunning($0) }) { breakdown = model.taskBreakdown(for: visibleDay) }
     }
 
     func refreshTime() {
@@ -195,10 +211,141 @@ final class CheckInViewModel {
         model.day(LocalDate(year: day.year, month: day.month, day: 1), offsetBy: delta > 0 ? 32 : -1)
     }
 
+    // MARK: - Tasks
+
+    var activeTaskID: UUID? { model.engine.activeTaskID }
+
+    func refreshTasks() {
+        tasks = model.openTasks()
+    }
+
+    var expiredTask: TaskItem? { expiredTaskID.flatMap(model.task) }
+
+    func isRunning(_ task: TaskItem) -> Bool { task.id == model.engine.activeTaskID }
+
+    /// Clicking a task starts it; clicking the running one pauses it (T-03).
+    func toggleTask(_ task: TaskItem) {
+        if isRunning(task) {
+            model.engine.stopTask()
+        } else {
+            model.engine.startTask(task)
+        }
+        refreshAfterTaskChange()
+    }
+
+    func elapsedText(for task: TaskItem) -> String {
+        model.display(model.engine.liveTaskSeconds(task.id))
+    }
+
+    /// Remaining time on a timed task; negative once it has overshot.
+    func remaining(for task: TaskItem) -> Seconds? { model.engine.taskRemaining(task) }
+
+    func remainingText(for task: TaskItem) -> String? {
+        guard let left = remaining(for: task) else { return nil }
+        return (left < 0 ? "+" : "") + model.formatter.string(abs(left), style: .clock)
+    }
+
+    func addTask() {
+        isAddingTask = true
+        newTaskTitle = ""
+    }
+
+    func commitNewTask() {
+        let title = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            isAddingTask = false
+            return
+        }
+        // The + button opens the task under the project the popup is showing.
+        model.createTask(title: title, projectName: effectiveName)
+        newTaskTitle = ""
+        isAddingTask = false
+        refreshAfterTaskChange()
+    }
+
+    func cancelNewTask() {
+        isAddingTask = false
+        newTaskTitle = ""
+    }
+
+    func finishTask(_ task: TaskItem) {
+        guard completingTaskID == nil else { return }
+        completingTaskID = task.id
+        if task.id == expiredTaskID { expiredTaskID = nil }
+        onTaskCompleting?()
+    }
+
+    /// Called when the completion animation has played out.
+    func commitFinish() {
+        guard let id = completingTaskID else { return }
+        completingTaskID = nil
+        model.engine.finishTask(id)
+        refreshAfterTaskChange()
+    }
+
+    func deleteTask(_ task: TaskItem) {
+        guard deletingTaskID == nil else { return }
+        deletingTaskID = task.id
+        if task.id == expiredTaskID { expiredTaskID = nil }
+        onTaskDeleting?()
+    }
+
+    func commitDelete() {
+        guard let id = deletingTaskID else { return }
+        deletingTaskID = nil
+        model.engine.taskDeleted(id)
+        try? model.store.deleteTask(id: id)
+        refreshAfterTaskChange()
+    }
+
+    func setTimer(_ task: TaskItem, text: String) {
+        guard let parsed = try? model.parser.parseAbsolute(text), parsed > 0 else { return }
+        try? model.store.setTaskTimer(id: task.id, seconds: parsed)
+        refreshAfterTaskChange()
+    }
+
+    func clearTimer(_ task: TaskItem) {
+        try? model.store.setTaskTimer(id: task.id, seconds: nil)
+        refreshAfterTaskChange()
+    }
+
+    /// "Keep working" on an expired timer: the task runs on, untimed (T-12).
+    func keepWorking() {
+        if let task = expiredTask { clearTimer(task) }
+        expiredTaskID = nil
+    }
+
+    func move(_ task: TaskItem, to project: Project) {
+        try? model.store.updateTask(id: task.id, projectID: project.id)
+        refreshAfterTaskChange()
+    }
+
+    func rename(_ task: TaskItem, to title: String) {
+        try? model.store.updateTask(id: task.id, title: title)
+        refreshAfterTaskChange()
+    }
+
+    var allProjects: [Project] { model.projects() }
+
+    private func refreshAfterTaskChange() {
+        refreshTasks()
+        refreshRows()
+        refreshStatus()
+        refreshTime()
+    }
+
+    /// Tasks with time on the visible day, indented under their project.
+    func taskRows(under project: UUID) -> [(task: TaskItem, seconds: Seconds)] {
+        breakdown[project] ?? []
+    }
+
+    private var breakdown: [UUID: [(task: TaskItem, seconds: Seconds)]] = [:]
+
     func refreshRows() {
         guard !isCommitting else { return }
         let before = todayRows.count
         todayRows = model.rows(for: visibleDay)
+        breakdown = model.taskBreakdown(for: visibleDay)
         refreshStatus()
         if todayRows.count != before { onContentSizeChanged?() }
     }
@@ -467,6 +614,8 @@ final class CheckInViewModel {
         refreshRows()
         return true
     }
+
+    func display(_ seconds: Seconds) -> String { model.display(seconds) }
 
     func totalText(for row: ReportRow) -> String {
         model.formatter.string(row.seconds, style: timeStyle)
