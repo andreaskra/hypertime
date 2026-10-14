@@ -55,6 +55,12 @@ enum Tokens {
         static let idleIndicator = ThemedColor("#00000073", "#FFFFFF73")
         static let invalidFieldBackground = ThemedColor("#FF453A21", "#FF453A2E")
         static let autoHideDrain = ThemedColor("#00000038", "#FFFFFF42")
+        /// Today-list times sit a step darker than secondary text (artboard: rgba(0,0,0,0.75)).
+        static let rowTime = ThemedColor("#000000BF", "#FFFFFFBF")
+        /// Secondary button fill — a neutral grey, not the white of a field.
+        static let buttonSecondary = ThemedColor("#0000000F", "#FFFFFF1A")
+        /// The ⌘⌫ chip beside Discard is tinted with the destructive colour, not neutral.
+        static let discardHint = ThemedColor("#C938321F", "#FF69611F")
 
         /// The design uses the system accent throughout; nothing depends on it being blue.
         static var accent: Color { Color(nsColor: .controlAccentColor) }
@@ -156,6 +162,11 @@ enum Tokens {
     }
 
     enum Space {
+        /// The panel's own padding is 14 top, 16 elsewhere (artboard: `padding:14px 16px 16px`).
+        static let panelTop: CGFloat = 14
+        /// Horizontal insets the artboard uses inside the field and the list rows.
+        static let fieldInset: CGFloat = 10
+        static let rowInset: CGFloat = 9
         static let s1: CGFloat = 4
         static let s2: CGFloat = 8
         static let s3: CGFloat = 12
@@ -238,6 +249,13 @@ enum Tokens {
         static let discardCollapse = MotionToken(ms: 120, curve: .easeIn(duration: 0.12))
         static let autoHide = MotionToken(ms: 20000, curve: .linear(duration: 20))
         static let reduceMotionFallback = MotionToken(ms: 120, curve: .linear(duration: 0.12))
+    }
+
+    /// Button label widths from the artboard's component sheet: the three are not equal.
+    enum ButtonInset {
+        static let discard: CGFloat = 12
+        static let secondary: CGFloat = 13
+        static let primary: CGFloat = 14
     }
 
     /// The confirm bounce: the amount label pulls back, overshoots and settles.

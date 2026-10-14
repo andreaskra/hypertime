@@ -16,16 +16,22 @@ struct TodayListView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Tokens.Space.s1) {
-            HStack {
-                Text("TODAY")
-                    .font(Tokens.Typography.caption.font.weight(.semibold))
-                    .tracking(0.6)
+            HStack(alignment: .firstTextBaseline) {
+                // Once the list scrolls, the label says how much is out of sight (artboard
+                // "TODAY · 9 PROJECTS").
+                Text(viewModel.todayRows.count > Tokens.Size.todayListMaxVisibleRows
+                     ? "TODAY · \(viewModel.todayRows.count) PROJECTS"
+                     : "TODAY")
+                    .font(Tokens.Typography.caption)
+                    .tracking(0.5)
                     .foregroundStyle(Tokens.Palette.textTertiary.color)
                 Spacer()
                 Text(viewModel.todayTotalText)
                     .font(Tokens.Typography.timeCell)
                     .foregroundStyle(Tokens.Palette.textSecondary.color)
             }
+            .padding(.horizontal, Tokens.Space.rowInset)
+            .padding(.bottom, Tokens.Space.s1)
 
             if viewModel.todayRows.isEmpty {
                 Text("Nothing tracked yet today.")
@@ -77,7 +83,7 @@ private struct TodayRowView: View {
             Spacer(minLength: Tokens.Space.s2)
             TotalField(viewModel: viewModel, row: row)
         }
-        .padding(.horizontal, Tokens.Space.s2)
+        .padding(.horizontal, Tokens.Space.rowInset)
         .frame(height: Tokens.Size.listRowHeight)
         .background {
             RoundedRectangle(cornerRadius: Tokens.Radius.row, style: .continuous)
@@ -110,7 +116,7 @@ struct TotalField: View {
         EditableField(
             text: isEditing ? text : viewModel.totalText(for: row),
             font: Tokens.Typography.timeCell,
-            textColor: Tokens.Palette.textSecondary.nsColor,
+            textColor: Tokens.Palette.rowTime.nsColor,
             isInvalid: isInvalid,
             alignment: .right,
             isFocused: viewModel.focus == .total(row.project.id),

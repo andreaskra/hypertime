@@ -15,6 +15,8 @@ final class PanelPresentation {
     /// 1 = full width, 0 = drained. Drives the 20 s top-edge drain (D-14).
     var drainProgress: Double = 1
     var isDraining = false
+    /// When the passive popup will hide itself, so the caption can count down to it.
+    var autoHideDeadline: Date?
     /// Set while the discard animation collapses the amount field.
     var isDiscarding = false
     /// Bumped to trigger the invalid shake.

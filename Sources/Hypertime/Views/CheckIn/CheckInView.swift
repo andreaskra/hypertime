@@ -52,7 +52,9 @@ struct CheckInView: View {
                         if !viewModel.showsProjectList { presentation.reportButtonsTop(top) }
                     }
             }
-            .padding(Tokens.Space.s4)
+            .padding(.top, Tokens.Space.panelTop)
+            .padding(.horizontal, Tokens.Space.s4)
+            .padding(.bottom, Tokens.Space.s4)
 
             if viewModel.showsProjectList {
                 ProjectList(viewModel: viewModel)
@@ -116,16 +118,21 @@ struct CheckInView: View {
             Button {
                 viewModel.toggleTracking()
             } label: {
-                // Play whenever time is not running — paused or idle. Idle is where the popup
-                // starts after a launch, and it needs a way to begin tracking.
-                Image(systemName: viewModel.isTracking ? Tokens.Icons.pause : Tokens.Icons.resume)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Tokens.Palette.textSecondary.color)
-                    .frame(width: Tokens.Size.iconButton, height: Tokens.Size.iconButton)
-                    .background {
-                        RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous)
-                            .fill(Tokens.Palette.rowHover.color)
-                    }
+                if viewModel.isPaused {
+                    // Paused states the way out in words, not a glyph (artboard A-popup paused).
+                    Text("Resume")
+                        .font(Tokens.Typography.heading)
+                        .foregroundStyle(Tokens.Palette.accent)
+                } else {
+                    Image(systemName: viewModel.isTracking ? Tokens.Icons.pause : Tokens.Icons.resume)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Tokens.Palette.textSecondary.color)
+                        .frame(width: Tokens.Size.iconButton, height: Tokens.Size.iconButton)
+                        .background {
+                            RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous)
+                                .fill(Tokens.Palette.rowHover.color)
+                        }
+                }
             }
             .buttonStyle(.plain)
             .disabled(!viewModel.canToggleTracking)
@@ -162,7 +169,7 @@ struct CheckInView: View {
             Button { viewModel.discard() } label: {
                 HStack(spacing: Tokens.Space.s1) {
                     Text("Discard")
-                    KeyboardHint(text: "⌘⌫")
+                    KeyboardHint(text: "⌘⌫", style: .destructiveChip)
                 }
             }
             .hypertimeButton(.destructiveGhost)

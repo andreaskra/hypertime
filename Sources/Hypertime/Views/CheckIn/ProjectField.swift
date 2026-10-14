@@ -35,7 +35,7 @@ struct ProjectField: View {
             .buttonStyle(.plain)
             .help(viewModel.isProjectListOpen ? "Hide the project list" : "Show the project list")
         }
-        .padding(.horizontal, Tokens.Space.s3)
+        .padding(.horizontal, Tokens.Space.fieldInset)
         .frame(height: Tokens.Size.fieldHeight)
         .background {
             RoundedRectangle(cornerRadius: Tokens.Radius.field, style: .continuous)

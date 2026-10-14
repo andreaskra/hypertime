@@ -289,6 +289,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
 
         presentation.drainProgress = 1
         presentation.isDraining = true
+        presentation.autoHideDeadline = Date().addingTimeInterval(TimeInterval(seconds))
         if !reduceMotion {
             withAnimation(.linear(duration: TimeInterval(seconds))) {
                 presentation.drainProgress = 0
@@ -313,6 +314,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
                 presentation.isDraining = false
                 presentation.drainProgress = 1
             }
+            presentation.autoHideDeadline = nil
         }
     }
 

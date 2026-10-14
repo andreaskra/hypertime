@@ -181,7 +181,9 @@ final class CheckInViewModel {
 
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty, FuzzyMatcher.exactMatch(trimmed, in: projects, key: \.name) == nil {
-            rows.insert(.create(trimmed), at: 0)
+            // Last, under a separator: ↩ should land on the best match, not quietly make a
+            // fourth project called "de" (artboard A-popup dropdown).
+            rows.append(.create(trimmed))
         }
         matches = rows
 

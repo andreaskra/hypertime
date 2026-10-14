@@ -66,15 +66,22 @@ struct AmountField: View {
 
     private var caption: String {
         if viewModel.timeFieldInvalid { return "Try 1:30 or 90m" }
+        // A popup that let itself in says how long it will wait, and how to answer it without
+        // reaching for the mouse (artboard A-popup passive).
+        if let deadline = presentation.autoHideDeadline, !isFocused {
+            let left = Int(deadline.timeIntervalSinceNow.rounded(.up))
+            if left > 0 { return "⌘Tab to answer · hides in \(left) s" }
+        }
         // While the field holds an entry ↩ has not taken yet, the next press sets the amount
         // rather than saving — and the line has to say the thing the key will actually do.
         if isFocused && !viewModel.isTimeAccepted {
             return "since last check-in · ↩ sets the amount"
         }
         let name = viewModel.effectiveName.isEmpty ? viewModel.currentProjectName : viewModel.effectiveName
-        guard let name else { return "since last check-in · ↩ starts tracking" }
+        guard let name else { return "nothing tracked yet · counting starts on ↩" }
         let verb = viewModel.isPaused ? "adds it and resumes" : "adds it to"
-        return "since last check-in · ↩ \(verb) \(name)"
+        let lead = viewModel.isPaused ? "not counting" : "since last check-in"
+        return "\(lead) · ↩ \(verb) \(name)"
     }
 
     private func handle(_ selector: Selector, _ modifiers: NSEvent.ModifierFlags) -> Bool {

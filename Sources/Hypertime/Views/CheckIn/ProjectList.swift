@@ -12,6 +12,9 @@ struct ProjectList: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(viewModel.matches.enumerated()), id: \.element.id) { index, row in
+                        if case .create = row, index > 0 {
+                            Hairline().padding(.vertical, 2)
+                        }
                         rowView(row, isHighlighted: index == viewModel.highlighted)
                             .id(row.id)
                             .contentShape(Rectangle())
@@ -36,7 +39,8 @@ struct ProjectList: View {
     var height: CGFloat { Self.height(rows: viewModel.matches.count) }
 
     static func height(rows: Int) -> CGFloat {
-        CGFloat(min(rows, Tokens.Size.todayListMaxVisibleRows)) * Tokens.Size.dropdownRowHeight + Tokens.Space.s2
+        CGFloat(min(rows, Tokens.Size.todayListMaxVisibleRows)) * Tokens.Size.dropdownRowHeight
+            + Tokens.Space.s2 + Tokens.Space.s1          // room for the Create separator
     }
 
     @ViewBuilder

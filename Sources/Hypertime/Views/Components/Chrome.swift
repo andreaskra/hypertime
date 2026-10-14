@@ -60,24 +60,26 @@ struct HypertimeButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(Tokens.Typography.heading)
+            .font(Tokens.Typography.body)
             .foregroundStyle(foreground)
-            .padding(.horizontal, Tokens.Space.s3)
+            .padding(.horizontal, inset)
             .frame(height: Tokens.Size.buttonHeight)
             .background {
                 RoundedRectangle(cornerRadius: Tokens.Radius.button, style: .continuous)
                     .fill(background)
             }
-            .overlay {
-                if kind == .secondary {
-                    RoundedRectangle(cornerRadius: Tokens.Radius.button, style: .continuous)
-                        .strokeBorder(Tokens.Palette.separator.color,
-                                      lineWidth: Tokens.Focus.hairlineWidth(contrast == .increased))
-                }
-            }
             .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
             .focusRing(isFocused, radius: Tokens.Radius.button)
             .contentShape(RoundedRectangle(cornerRadius: Tokens.Radius.button, style: .continuous))
+    }
+
+    /// The artboard gives the three buttons different widths.
+    private var inset: CGFloat {
+        switch kind {
+        case .primary: return Tokens.ButtonInset.primary
+        case .secondary: return Tokens.ButtonInset.secondary
+        case .ghost, .destructiveGhost: return Tokens.ButtonInset.discard
+        }
     }
 
     private var foreground: Color {
@@ -92,7 +94,7 @@ struct HypertimeButtonStyle: ButtonStyle {
     private var background: Color {
         switch kind {
         case .primary: return Tokens.Palette.accent
-        case .secondary: return Tokens.Palette.fieldBackground.color
+        case .secondary: return Tokens.Palette.buttonSecondary.color
         case .ghost, .destructiveGhost: return .clear
         }
     }
@@ -104,26 +106,33 @@ extension View {
     }
 }
 
-/// Small ⌘⌫ / ↩ / esc chip shown next to a button label.
+/// The shortcut beside a button label. `esc` and `↩` ride inline as faded glyphs; only the
+/// two-key ⌘⌫ gets a chip, tinted with the destructive colour it belongs to (artboard).
 struct KeyboardHint: View {
+    enum Style {
+        case inline, destructiveChip
+    }
+
     let text: String
-    @Environment(\.colorSchemeContrast) private var contrast
+    var style: Style = .inline
 
     var body: some View {
-        Text(text)
-            .font(Tokens.Typography.keyboardHint)
-            .foregroundStyle(Tokens.Palette.textTertiary.color)
-            .padding(.horizontal, 3)
-            .padding(.vertical, 1)
-            .background {
-                RoundedRectangle(cornerRadius: Tokens.Radius.kbdHint, style: .continuous)
-                    .fill(Tokens.Palette.rowHover.color)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Tokens.Radius.kbdHint, style: .continuous)
-                            .strokeBorder(Tokens.Palette.separator.color,
-                                          lineWidth: Tokens.Focus.hairlineWidth(contrast == .increased))
-                    }
-            }
+        switch style {
+        case .inline:
+            Text(text)
+                .font(Tokens.Typography.keyboardHint)
+                .opacity(0.6)
+        case .destructiveChip:
+            Text(text)
+                .font(Tokens.Typography.keyboardHint)
+                .foregroundStyle(Tokens.Palette.destructive.color)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background {
+                    RoundedRectangle(cornerRadius: Tokens.Radius.kbdHint, style: .continuous)
+                        .fill(Tokens.Palette.discardHint.color)
+                }
+        }
     }
 }
 
