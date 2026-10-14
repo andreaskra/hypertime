@@ -89,10 +89,29 @@ dates.
 
 A single project can hold at most 24 hours on one day.
 
+## Tasks
+
+The popup carries a todo list above the day breakdown. `+` opens a task under the project in the
+field. Click a task and it takes the clock — its time books to the task *and* to its project, so
+the project total always contains its tasks rather than sitting beside them. Click it again to
+pause; starting another task parks the first. The checkmark finishes a task: it leaves the list,
+its time stays.
+
+Give a task a timer from its `⋯` menu and the row counts down. At zero Hypertime comes forward
+and asks: **Finish**, or **Keep working** — which drops the countdown and carries on. While a
+task is running the regular check-in stays quiet, because the question is already answered.
+
+Unfinished tasks carry over to the next day. The `⋯` menu also moves a task to another project,
+renames it, and deletes it — deleting keeps the time on the project, since the work happened.
+
 ## Reports and editing
 
-**Reports…** (⌘R, or the menu bar menu) opens day, week, month and year views.
+**Reports…** (⌘R, the `⋯` menu in the popup, or the menu bar menu) opens day, week, month and
+year views. The popup itself steps through days with `‹ calendar ›` — days with tracked time
+carry a dot in the calendar.
 
+- **Chart or table**, toggled in the toolbar. The chart stacks projects per day (or per month
+  for a year); tick a project to hide it, click one to show it alone, "Select all" to reset.
 - **Day** lists every project with time that day; click a total to set it.
 - **Week** is a project × day grid; every cell is editable, and today's column is tinted.
 - **Month** shows one intensity square per day — click one to open that day.
@@ -140,7 +159,7 @@ Back it up by copying that file. If it ever becomes unreadable, Hypertime moves 
 ## Development
 
 ```bash
-swift test                  # 105 tests over HypertimeCore
+swift test                  # 129 tests over HypertimeCore
 scripts/run.sh              # build dist/Hypertime.app and launch it
 scripts/run.sh --seed-demo  # same, against a seeded demo database
 scripts/release.sh          # signed .app + .zip + .dmg in dist/

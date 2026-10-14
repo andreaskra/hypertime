@@ -1,4 +1,9 @@
-# Phase 4 — Tasks (spec for sign-off)
+# Phase 4 — Tasks (built)
+
+> **Status: built as written.** The three decisions in §8 were taken as proposed. One thing the
+> build added: when a task stops, the check-in clock *restarts* rather than firing the backlog it
+> skipped — "the interval resumes" (TD-03) read as resuming, not catching up. A test pins it.
+
 
 Everything else in the Phase 4 batch (day navigation, the chart, the overflow menu, the sticky
 window, animations) is specified well enough to build directly. Tasks are not, so this is the

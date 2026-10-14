@@ -10,6 +10,7 @@ import HypertimeCore
 /// table view carries the same numbers.
 struct ActivityChartView: View {
     @Bindable var viewModel: ReportsViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let barMaxHeight: CGFloat = 220
     private let legendColumns = [GridItem(.adaptive(minimum: 150), spacing: Tokens.Space.s2)]
@@ -26,6 +27,8 @@ struct ActivityChartView: View {
         }
         .padding(Tokens.Space.s4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .animation(Tokens.Motion.listOpen.animation(reduceMotion: reduceMotion),
+                   value: viewModel.hiddenProjects)
     }
 
     private var empty: some View {

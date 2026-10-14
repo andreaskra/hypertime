@@ -4,8 +4,9 @@ Start with `docs/PLAN.md`. It is the contract: requirement IDs (R-xx), decisions
 assumptions (A-xx), component specs, and the phase plan with acceptance checklists.
 `docs/DESIGN_BRIEF.md` describes the design handoff that Phase 2 consumes.
 `docs/DECISIONS.md` records every decision that refines or deviates from the plan.
+`docs/PLAN-PHASE4-TASKS.md` is the tasks contract (built).
 
-Status: **Phases 0–3 complete.** The design handoff lives in `docs/design-handoff/handoff/`
+Status: **Phases 0–4 complete.** The design handoff lives in `docs/design-handoff/handoff/`
 (`tokens.json`, `HANDOFF.md`, SVG assets). What is still open is listed at the bottom of
 `docs/DECISIONS.md`: the manual checklist items that need a person at the keyboard, and the
 artboard-drift pass (the artboards were not part of the handoff zip).
@@ -23,7 +24,7 @@ artboard-drift pass (the artboards were not part of the handoff zip).
 ## Commands
 ```bash
 swift build
-swift test                              # 105 tests, swift-testing (import Testing)
+swift test                              # 129 tests, swift-testing (import Testing)
 swift test --enable-code-coverage
 scripts/build-app.sh                    # -> dist/Hypertime.app (ad-hoc signed)
 scripts/run.sh                          # kills running instance, builds, opens

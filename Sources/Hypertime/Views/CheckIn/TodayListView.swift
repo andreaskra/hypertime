@@ -26,6 +26,8 @@ struct TodayListView: View {
         .help(help)
     }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(alignment: .leading, spacing: Tokens.Space.s1) {
             HStack(spacing: 2) {
@@ -88,6 +90,8 @@ struct TodayListView: View {
                 .scrollIndicators(.hidden)
                 .frame(height: visibleHeight)
                 .edgeFade(top: scrollOffset > 1, bottom: scrollOffset + visibleHeight < contentHeight - 1)
+                .animation(Tokens.Motion.listOpen.animation(reduceMotion: reduceMotion),
+                           value: viewModel.todayRows.map(\.project.id))
                 .overlay {
                     ThinScrollIndicator(contentHeight: contentHeight, visibleHeight: visibleHeight, offset: scrollOffset)
                 }

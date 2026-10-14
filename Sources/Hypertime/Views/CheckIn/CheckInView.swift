@@ -77,6 +77,9 @@ struct CheckInView: View {
             }
         }
         .animation(Tokens.Motion.listOpen.animation(reduceMotion: reduceMotion), value: viewModel.showsProjectList)
+        .animation(Tokens.Motion.pauseCrossfade.animation(reduceMotion: reduceMotion), value: viewModel.isPaused)
+        .animation(Tokens.Motion.pauseCrossfade.animation(reduceMotion: reduceMotion), value: viewModel.isTracking)
+        .animation(Tokens.Motion.listOpen.animation(reduceMotion: reduceMotion), value: viewModel.visibleDay)
         .frame(width: Self.width)
         .coordinateSpace(.named("panel"))
         .background { GlassBackground(style: material, cornerRadius: Tokens.Radius.panel) }

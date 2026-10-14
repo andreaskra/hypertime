@@ -8,6 +8,7 @@ struct ReportsView: View {
     var onExport: () -> Void
 
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let nameColumn: CGFloat = 160
     private let totalColumn: CGFloat = 82
@@ -18,6 +19,10 @@ struct ReportsView: View {
             Hairline()
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .animation(Tokens.Motion.listOpen.animation(reduceMotion: reduceMotion),
+                           value: viewModel.presentation)
+                .animation(Tokens.Motion.listOpen.animation(reduceMotion: reduceMotion),
+                           value: viewModel.title)
             Hairline()
             footer
         }
