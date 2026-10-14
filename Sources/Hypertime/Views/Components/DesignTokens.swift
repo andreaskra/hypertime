@@ -277,6 +277,33 @@ enum Tokens {
         static func hairlineWidth(_ increased: Bool) -> CGFloat { increased ? 1 : 0.5 }
     }
 
+    /// Categorical series colours for the chart. Both columns are the validated reference
+    /// palette (dataviz skill): worst adjacent CVD ΔE 9.1 light / 8.4 dark, normal-vision 19.6 /
+    /// 19.3. Slots are assigned in fixed order and never cycled — a ninth project folds into
+    /// "Other" rather than repeating a hue.
+    enum Series {
+        static let slots: [ThemedColor] = [
+            ThemedColor("#2a78d6", "#3987e5"),   // blue
+            ThemedColor("#eb6834", "#d95926"),   // orange
+            ThemedColor("#1baf7a", "#199e70"),   // aqua
+            ThemedColor("#eda100", "#c98500"),   // yellow
+            ThemedColor("#e87ba4", "#d55181"),   // magenta
+            ThemedColor("#008300", "#008300"),   // green
+            ThemedColor("#4a3aa7", "#9085e9"),   // violet
+            ThemedColor("#e34948", "#e66767"),   // red
+        ]
+        static let other = ThemedColor("#8A8A8E", "#98989D")
+        static let maxSlots = 8
+
+        static func color(slot: Int) -> Color {
+            slot >= 0 && slot < slots.count ? slots[slot].color : other.color
+        }
+
+        /// Stacked segments and adjacent bars are separated by a surface-coloured gap.
+        static let gap: CGFloat = 2
+        static let barCorner: CGFloat = 4
+    }
+
     // MARK: - Icons
 
     enum Icons {

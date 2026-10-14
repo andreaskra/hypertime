@@ -2,6 +2,22 @@ import Foundation
 import HypertimeCore
 import Observation
 
+/// One bar in the chart: a bucket of time split into per-project segments.
+struct ChartBucket: Identifiable {
+    let id: String
+    let label: String
+    let day: LocalDate?                      // nil for the day view's per-project bars
+    let segments: [ChartSegment]
+    var total: Seconds { segments.reduce(0) { $0 + $1.seconds } }
+}
+
+struct ChartSegment: Identifiable {
+    let id: UUID
+    let name: String
+    let slot: Int
+    let seconds: Seconds
+}
+
 @MainActor
 @Observable
 final class ReportsViewModel {
@@ -15,6 +31,13 @@ final class ReportsViewModel {
     private(set) var anchor: LocalDate
     var errorMessage: String?
     var newProjectName = ""
+
+    enum Presentation: String, CaseIterable { case chart, table }
+    var presentation: Presentation = .chart
+    /// Projects the user has unticked. Hiding never re-assigns colours to the survivors.
+    var hiddenProjects: Set<UUID> = []
+    /// Colour slots, assigned from the *unfiltered* report in a fixed order.
+    private(set) var seriesOrder: [UUID] = []
 
     init(model: AppModel) {
         self.model = model
@@ -41,6 +64,10 @@ final class ReportsViewModel {
     func reload() {
         do {
             report = try model.reportBuilder.report(for: period)
+            // Slots come from the unfiltered ranking, so unticking a project never repaints
+            // the ones that remain.
+            seriesOrder = (report?.rows ?? []).map(\.project.id)
+            hiddenProjects = hiddenProjects.intersection(seriesOrder)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -137,4 +164,88 @@ final class ReportsViewModel {
     }
 
     var isEditable: Bool { kind == .day || kind == .week }
+
+    // MARK: - Chart
+
+    /// Slot for a project, or `Series.maxSlots` for everything past the eighth ("Other").
+    func slot(for project: UUID) -> Int {
+        guard let index = seriesOrder.firstIndex(of: project) else { return Tokens.Series.maxSlots }
+        return index < Tokens.Series.maxSlots ? index : Tokens.Series.maxSlots
+    }
+
+    func isVisible(_ project: UUID) -> Bool { !hiddenProjects.contains(project) }
+
+    func toggle(_ project: UUID) {
+        if hiddenProjects.contains(project) {
+            hiddenProjects.remove(project)
+        } else {
+            hiddenProjects.insert(project)
+        }
+    }
+
+    /// Clicking a project in the chart or legend shows only that one.
+    func isolate(_ project: UUID) {
+        hiddenProjects = Set(seriesOrder).subtracting([project])
+    }
+
+    func selectAll() { hiddenProjects.removeAll() }
+
+    var hasHiddenProjects: Bool { !hiddenProjects.isEmpty }
+
+    var legendRows: [ReportRow] { report?.rows ?? [] }
+
+    /// Bars for the current period. Day shows one bar per project; the longer periods bucket by
+    /// day (or month, for a year) and stack the projects inside each bar.
+    var chartBuckets: [ChartBucket] {
+        guard let report else { return [] }
+        let rows = report.rows.filter { isVisible($0.project.id) }
+
+        func segments(_ seconds: (ReportRow) -> Seconds) -> [ChartSegment] {
+            rows.compactMap { row in
+                let value = seconds(row)
+                guard value > 0 else { return nil }
+                return ChartSegment(id: row.project.id, name: row.project.name,
+                                    slot: slot(for: row.project.id), seconds: value)
+            }
+        }
+
+        switch kind {
+        case .day:
+            return rows.filter { $0.seconds > 0 }.map { row in
+                ChartBucket(id: row.project.id.uuidString,
+                            label: row.project.name,
+                            day: nil,
+                            segments: [ChartSegment(id: row.project.id, name: row.project.name,
+                                                    slot: slot(for: row.project.id), seconds: row.seconds)])
+            }
+        case .week, .month:
+            return report.days.map { day in
+                ChartBucket(id: day.isoString,
+                            label: kind == .week ? shortDayLabel(day) : String(day.day),
+                            day: day,
+                            segments: segments { $0.seconds(on: day) })
+            }
+        case .year:
+            return months.map { month in
+                let range = month.range(calendar: calendar, weekStart: weekStart)
+                return ChartBucket(id: "\(month)",
+                                   label: monthInitial(month),
+                                   day: range.lowerBound,
+                                   segments: segments { row in
+                                       row.perDay.reduce(0) { $0 + (range.contains($1.key) ? $1.value : 0) }
+                                   })
+            }
+        }
+    }
+
+    var chartMaximum: Seconds { max(chartBuckets.map(\.total).max() ?? 0, 1) }
+
+    private func shortDayLabel(_ day: LocalDate) -> String {
+        Period.day(day).shortTitle(calendar: calendar, weekStart: weekStart)
+    }
+
+    private func monthInitial(_ month: Period) -> String {
+        guard case .month(_, let index) = month else { return "" }
+        return String((DateFormatter().shortMonthSymbols?[index - 1] ?? "").prefix(1))
+    }
 }

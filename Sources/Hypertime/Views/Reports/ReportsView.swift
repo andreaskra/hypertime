@@ -54,8 +54,19 @@ struct ReportsView: View {
                 .font(Tokens.Typography.periodTitle)
                 .foregroundStyle(Tokens.Palette.textPrimary.color)
                 .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
 
             Spacer(minLength: Tokens.Space.s2)
+
+            Picker("", selection: $viewModel.presentation) {
+                Image(systemName: "chart.bar").tag(ReportsViewModel.Presentation.chart)
+                Image(systemName: "tablecells").tag(ReportsViewModel.Presentation.table)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 76)
+            .help("Chart or table")
 
             Button {
                 onExport()
@@ -103,6 +114,9 @@ struct ReportsView: View {
 
     private var footerHint: String {
         if let message = viewModel.errorMessage { return message }
+        if viewModel.presentation == .chart {
+            return "Tick to hide a project · click one to show it alone."
+        }
         switch viewModel.kind {
         case .day, .week: return "Edit a total to set it, or type +15m / −30m to adjust it."
         case .month: return "Click a day to open it."
@@ -114,6 +128,14 @@ struct ReportsView: View {
 
     @ViewBuilder
     private var content: some View {
+        switch viewModel.presentation {
+        case .chart: ActivityChartView(viewModel: viewModel)
+        case .table: table
+        }
+    }
+
+    @ViewBuilder
+    private var table: some View {
         switch viewModel.kind {
         case .day: dayView
         case .week: weekView

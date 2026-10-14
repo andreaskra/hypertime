@@ -134,6 +134,16 @@ enum ScreenshotRenderer {
                                                         onPick: { _, _ in })), in: url)
 
         // Reports.
+        reports.presentation = .chart
+        for kind in [PeriodKind.week, .month, .year] {
+            reports.kind = kind
+            render("chart-\(kind.rawValue)",
+                   AnyView(ReportsView(viewModel: reports, onExport: {}).frame(width: Tokens.Size.reportsDefault.width,
+                                                                              height: Tokens.Size.reportsDefault.height)),
+                   in: url)
+        }
+        reports.presentation = .table
+
         for kind in [PeriodKind.day, .week, .month, .year] {
             reports.kind = kind
             render("reports-\(kind.rawValue)",
