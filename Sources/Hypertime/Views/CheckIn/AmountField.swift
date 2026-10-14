@@ -27,7 +27,7 @@ struct AmountField: View {
                     selectAllOnFocus: true,
                     onText: { viewModel.timeTextChanged($0) },
                     onCommand: handle,
-                    onBeginEditing: { viewModel.focus = .time }
+                    onBeginEditing: { viewModel.beginEditingTime() }
                 )
                 .frame(width: 150)
             }

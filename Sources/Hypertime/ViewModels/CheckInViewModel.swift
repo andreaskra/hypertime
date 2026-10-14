@@ -68,7 +68,15 @@ final class CheckInViewModel {
             if focus != .project { isProjectListOpen = false }
             // Leaving the field forgets that ↩ had taken its value: coming back should show the
             // same two steps as arriving the first time, not commit on the first press.
-            if focus != .time { isTimeAccepted = false }
+            if focus != .time {
+                isTimeAccepted = false
+                // An empty field means "no opinion": hand it back to the live counter once the
+                // user has moved on. A field with something in it keeps what they typed.
+                if timeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    isEditingTime = false
+                    refreshTime()
+                }
+            }
         }
     }
     var statusLine = ""
@@ -271,9 +279,14 @@ final class CheckInViewModel {
         timeText = text
         timeFieldInvalid = false
         isTimeAccepted = false
-        // Clearing the field hands the display back to the live counter (§6.4).
-        isEditingTime = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        if !isEditingTime { refreshTime() }
+        isEditingTime = true
+    }
+
+    /// The counter stops the moment the field takes the keyboard, not on the first keystroke:
+    /// text that rewrites itself every second cannot be edited, only retyped.
+    func beginEditingTime() {
+        focus = .time
+        isEditingTime = true
     }
 
     /// ↑/↓ in the time field: ±1 min, ±5 min with Shift, ±1 h with Option.

@@ -106,6 +106,23 @@ enum SelfTest {
 
         // The first ↩ in the time field takes the time: typing "90m" and pressing once used to
         // save an amount the user had never seen rendered.
+        // Taking the keyboard stops the counter: text that rewrites itself cannot be edited.
+        viewModel.prepareForShow()
+        check("the amount runs live until the field is touched", !viewModel.isEditingTime)
+        viewModel.beginEditingTime()
+        check("focusing the amount field stops the counter", viewModel.isEditingTime)
+        let frozen = viewModel.timeText
+        viewModel.refreshTime()
+        check("…and a refresh no longer rewrites it", viewModel.timeText == frozen, viewModel.timeText)
+        viewModel.focus = .project
+        check("leaving an empty amount hands it back to the counter", !viewModel.isEditingTime)
+        viewModel.focus = .time
+        viewModel.timeTextChanged("42m")
+        viewModel.focus = .project
+        check("leaving an edited amount keeps what was typed",
+              viewModel.isEditingTime && viewModel.timeText == "42m", viewModel.timeText)
+        viewModel.focus = .time
+
         viewModel.timeTextChanged("90m")
         check("↩ in the time field is consumed by the field", viewModel.acceptTimeEntry())
         check("…and normalises what was typed", viewModel.timeText == "1:30:00", viewModel.timeText)
