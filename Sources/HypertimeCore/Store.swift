@@ -340,6 +340,16 @@ public final class Store: @unchecked Sendable {
         }
     }
 
+    /// Days in the range with any time on them — the calendar marks these.
+    public func daysWithTime(in range: ClosedRange<LocalDate>) throws -> Set<LocalDate> {
+        try dbQueue.read { db in
+            let days = try String.fetchAll(db,
+                sql: "SELECT DISTINCT day FROM day_entry WHERE day >= ? AND day <= ? AND seconds > 0",
+                arguments: [range.lowerBound.isoString, range.upperBound.isoString])
+            return Set(days.compactMap(LocalDate.parse))
+        }
+    }
+
     public func totalSeconds(in range: ClosedRange<LocalDate>) throws -> Seconds {
         try dbQueue.read { db in
             try Int.fetchOne(db, sql: "SELECT COALESCE(SUM(seconds), 0) FROM day_entry WHERE day >= ? AND day <= ?",

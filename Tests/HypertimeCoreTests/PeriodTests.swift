@@ -183,3 +183,40 @@ struct PeriodTests {
         #expect(!p.contains(d("2026-10-01"), calendar: cal, weekStart: .monday))
     }
 }
+
+@Suite("Month grid")
+struct MonthGridTests {
+
+    @Test("October 2026 lays out from Monday")
+    func mondayGrid() {
+        // 1 Oct 2026 is a Thursday, so a Monday-start grid pads three blanks.
+        let grid = Period.monthGrid(containing: d("2026-10-14"), calendar: cal, weekStart: .monday)
+        #expect(grid.first?.prefix(3).allSatisfy { $0 == nil } == true)
+        #expect(grid.first?[3] == d("2026-10-01"))
+        #expect(grid.allSatisfy { $0.count == 7 })
+        #expect(grid.flatMap { $0 }.compactMap { $0 }.count == 31)
+        #expect(grid.flatMap { $0 }.compactMap { $0 }.last == d("2026-10-31"))
+    }
+
+    @Test("the same month from Sunday shifts by one")
+    func sundayGrid() {
+        let grid = Period.monthGrid(containing: d("2026-10-14"), calendar: cal, weekStart: .sunday)
+        #expect(grid.first?.prefix(4).allSatisfy { $0 == nil } == true)
+        #expect(grid.first?[4] == d("2026-10-01"))
+    }
+
+    @Test("a month starting on the week's first day has no padding")
+    func noPadding() {
+        // 1 Jun 2026 is a Monday.
+        let grid = Period.monthGrid(containing: d("2026-06-15"), calendar: cal, weekStart: .monday)
+        #expect(grid.first?[0] == d("2026-06-01"))
+    }
+
+    @Test("weekday initials follow the week start")
+    func initials() {
+        let locale = Locale(identifier: "en_GB")
+        #expect(Period.weekdayInitials(calendar: cal, weekStart: .monday, locale: locale).first == "M")
+        #expect(Period.weekdayInitials(calendar: cal, weekStart: .sunday, locale: locale).first == "S")
+        #expect(Period.weekdayInitials(calendar: cal, weekStart: .monday, locale: locale).count == 7)
+    }
+}

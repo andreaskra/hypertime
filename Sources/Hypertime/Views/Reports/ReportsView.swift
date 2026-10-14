@@ -64,7 +64,8 @@ struct ReportsView: View {
             }
             .hypertimeButton(.secondary)
         }
-        .padding(.horizontal, Tokens.Space.s4)
+        .padding(.leading, Tokens.Size.trafficLightInset)
+        .padding(.trailing, Tokens.Space.s4)
         .frame(height: Tokens.Size.toolbarHeight)
         .background { periodShortcuts }
     }

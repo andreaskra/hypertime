@@ -121,8 +121,38 @@ final class AppModel {
         (try? store.projects()) ?? []
     }
 
-    func todayRows() -> [ReportRow] {
-        (try? reportBuilder.todayRows()) ?? []
+    func todayRows() -> [ReportRow] { rows(for: today) }
+
+    func rows(for day: LocalDate) -> [ReportRow] {
+        (try? reportBuilder.report(for: .day(day)).rows) ?? []
+    }
+
+    func day(_ day: LocalDate, offsetBy delta: Int) -> LocalDate {
+        day.adding(days: delta, calendar: clock.calendar)
+    }
+
+    /// "Mon 7 Oct" — the popup's label for a day that is not today.
+    func dayLabel(_ day: LocalDate) -> String {
+        Period.day(day).shortTitle(calendar: clock.calendar, weekStart: settings.weekStart)
+    }
+
+    func monthGrid(for month: LocalDate) -> [[LocalDate?]] {
+        Period.monthGrid(containing: month, calendar: clock.calendar, weekStart: settings.weekStart)
+    }
+
+    var weekdayInitials: [String] {
+        Period.weekdayInitials(calendar: clock.calendar, weekStart: settings.weekStart)
+    }
+
+    func monthTitle(_ month: LocalDate) -> String {
+        Period.month(year: month.year, month: month.month)
+            .title(calendar: clock.calendar, weekStart: settings.weekStart)
+    }
+
+    func daysWithTime(inMonthOf day: LocalDate) -> Set<LocalDate> {
+        let month = Period.month(year: day.year, month: day.month)
+        let range = month.range(calendar: clock.calendar, weekStart: settings.weekStart)
+        return (try? store.daysWithTime(in: range)) ?? []
     }
 
     func liveSeconds(project: UUID, day: LocalDate) -> Seconds {

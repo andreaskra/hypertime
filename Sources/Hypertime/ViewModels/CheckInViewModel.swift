@@ -58,7 +58,8 @@ final class CheckInViewModel {
     /// value, and by leaving the field.
     var isTimeAccepted = false
 
-    // Today list
+    // Day list — "today" by default, but it steps back and forward (R-17/R-18 in the popup).
+    var visibleDay: LocalDate = LocalDate(year: 1970, month: 1, day: 1)
     var todayRows: [ReportRow] = []
     var invalidTotalRow: UUID?
 
@@ -80,7 +81,8 @@ final class CheckInViewModel {
         }
     }
     var statusLine = ""
-    var todayTotalText = ""
+    /// Total for the day on screen, not for today — the list steps back.
+    var todayTotalText: String { model.display(todayRows.reduce(0) { $0 + $1.seconds }) }
     var isPaused = false
     var isTracking = false
 
@@ -95,6 +97,8 @@ final class CheckInViewModel {
     var onClose: (() -> Void)?
     var onContentSizeChanged: (() -> Void)?
     var onPauseRequested: (() -> Void)?
+    var onMenuRequested: (() -> Void)?
+    var onDayPickerRequested: (() -> Void)?
 
     init(model: AppModel) {
         self.model = model
@@ -115,6 +119,7 @@ final class CheckInViewModel {
     /// Called every time the popup is about to be shown.
     func prepareForShow() {
         isCommitting = false
+        visibleDay = model.today
         // R-05: the most recently used project is preselected, even on a fresh launch.
         let current = model.currentProject ?? model.projects().first
         query = ""
@@ -149,15 +154,51 @@ final class CheckInViewModel {
     func refreshStatus() {
         guard !isCommitting else { return }
         statusLine = model.statusSummary()
-        todayTotalText = model.formatter.string(model.todayTotal(), style: timeStyle)
         isPaused = model.engine.status.isPaused
         isTracking = model.engine.status.isTracking
+    }
+
+    /// True while the list shows today; only then does it carry live pending time.
+    var isShowingToday: Bool { visibleDay == model.today }
+
+    /// "TODAY", or the date when stepped back. The artboard's label, with the count appended by
+    /// the view when the list scrolls.
+    var dayLabel: String {
+        isShowingToday ? "TODAY" : model.dayLabel(visibleDay).uppercased()
+    }
+
+    func stepDay(_ delta: Int) {
+        visibleDay = model.day(visibleDay, offsetBy: delta)
+        refreshRows()
+    }
+
+    func showDay(_ day: LocalDate) {
+        visibleDay = day
+        refreshRows()
+    }
+
+    func goToToday() {
+        showDay(model.today)
+    }
+
+    /// Days in the visible day's month that have time, for the calendar's dots.
+    func markedDays(in month: LocalDate) -> Set<LocalDate> {
+        model.daysWithTime(inMonthOf: month)
+    }
+
+    func monthGrid(for month: LocalDate) -> [[LocalDate?]] { model.monthGrid(for: month) }
+    func monthTitle(_ month: LocalDate) -> String { model.monthTitle(month) }
+    var weekdayInitials: [String] { model.weekdayInitials }
+    var todayDate: LocalDate { model.today }
+    func month(_ day: LocalDate, offsetBy delta: Int) -> LocalDate {
+        // Stepping months from the 1st avoids landing short in February.
+        model.day(LocalDate(year: day.year, month: day.month, day: 1), offsetBy: delta > 0 ? 32 : -1)
     }
 
     func refreshRows() {
         guard !isCommitting else { return }
         let before = todayRows.count
-        todayRows = model.todayRows()
+        todayRows = model.rows(for: visibleDay)
         refreshStatus()
         if todayRows.count != before { onContentSizeChanged?() }
     }
@@ -165,7 +206,7 @@ final class CheckInViewModel {
     /// Updates the live totals without rebuilding the row set (keeps editing stable).
     private func refreshTotalsOnly() {
         guard !isCommitting else { return }
-        let fresh = model.todayRows()
+        let fresh = model.rows(for: visibleDay)
         if fresh.count != todayRows.count || zip(fresh, todayRows).contains(where: { $0.project.id != $1.project.id }) {
             todayRows = fresh
             onContentSizeChanged?()
@@ -369,6 +410,14 @@ final class CheckInViewModel {
         onPauseRequested?()
     }
 
+    func requestMenu() {
+        onMenuRequested?()
+    }
+
+    func requestDayPicker() {
+        onDayPickerRequested?()
+    }
+
     /// The header control: pause while tracking, resume while paused, start when idle. Idle is
     /// the state the popup opens in after a launch or a quit, so it needs a way back in that is
     /// not "confirm some amount of time".
@@ -408,7 +457,7 @@ final class CheckInViewModel {
     /// Saves an edited total from the today list (R-17). Returns false when the text is unparsable.
     @discardableResult
     func saveTotal(projectID: UUID, text: String) -> Bool {
-        guard model.editTotal(project: projectID, day: model.today, text: text) else {
+        guard model.editTotal(project: projectID, day: visibleDay, text: text) else {
             invalidTotalRow = projectID
             return false
         }

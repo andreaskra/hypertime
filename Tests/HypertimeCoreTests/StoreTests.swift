@@ -167,3 +167,25 @@ struct StoreTests {
         #expect(await iterator.next() == .projects)
     }
 }
+
+@Suite("Store — calendar marks")
+struct StoreCalendarTests {
+
+    @Test("daysWithTime lists only days that actually have time")
+    func daysWithTime() throws {
+        let clock = TestClock()
+        clock.set(year: 2026, month: 10, day: 14, hour: 9)
+        let store = try Store.inMemory(clock: clock)
+        let a = try store.findOrCreateProject(named: "A")
+        let b = try store.findOrCreateProject(named: "B")
+        try store.setSeconds(project: a.id, day: d("2026-10-01"), 600)
+        try store.setSeconds(project: b.id, day: d("2026-10-01"), 300)   // same day, two projects
+        try store.setSeconds(project: a.id, day: d("2026-10-05"), 900)
+        try store.setSeconds(project: a.id, day: d("2026-10-07"), 0)     // zero does not count
+        try store.setSeconds(project: a.id, day: d("2026-11-02"), 60)    // outside the range
+
+        let october = try store.daysWithTime(in: d("2026-10-01")...d("2026-10-31"))
+        #expect(october == [d("2026-10-01"), d("2026-10-05")])
+        #expect(try store.daysWithTime(in: d("2026-09-01")...d("2026-09-30")).isEmpty)
+    }
+}

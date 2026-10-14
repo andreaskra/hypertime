@@ -4,7 +4,7 @@ import HypertimeCore
 
 @main
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var model: AppModel!
     private var activation: ActivationController!
     private var statusItem: StatusItemController!
@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsTask: Task<Void, Never>?
 
     private var pausePopover: NSPopover?
+    private var menuPopover: NSPopover?
+    private var dayPickerPopover: NSPopover?
 
     /// True until the launch activation has been consumed, so it is not mistaken for Cmd+Tab.
     private var isLaunching = true
@@ -85,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if CommandLine.arguments.contains("--self-test") {
-            SelfTest.run(model: model, statusItem: statusItem, panel: panel)
+            SelfTest.run(model: model, statusItem: statusItem, panel: panel, settingsWindow: settingsWindow)
             return
         }
 
@@ -158,6 +160,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func wire() {
         panel.anchorProvider = { [weak self] in self?.statusItem.screenFrame }
+        panel.onMenuRequested = { [weak self] view in
+            guard let self else { return }
+            let anchor = NSRect(x: view.bounds.maxX - 36, y: view.bounds.maxY - 36, width: 20, height: 20)
+            self.showOverflowMenu(anchor: anchor, in: view)
+        }
+        panel.onDayPickerRequested = { [weak self] view in
+            guard let self else { return }
+            // Anchored on the calendar button, which sits on the day list's header row.
+            let anchor = NSRect(x: 24, y: self.panel.dayHeaderY(in: view), width: 20, height: 18)
+            self.showDayPicker(anchor: anchor, in: view)
+        }
         panel.onPauseRequested = { [weak self] view in
             guard let self else { return }
             // Anchored under the pause icon button in the popup header.
@@ -208,6 +221,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Menu actions
 
+    func popoverDidClose(_ notification: Notification) {
+        panel.isPresentingPopover = false
+    }
+
     @objc func showReports(_ sender: Any?) { reports.show() }
     @objc func showSettings(_ sender: Any?) { settingsWindow.show() }
 
@@ -232,8 +249,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.panel.refresh()
             }
         ))
-        popover.show(relativeTo: anchor, of: view, preferredEdge: .minY)
+        present(popover, anchor: anchor, in: view)
         pausePopover = popover
+    }
+
+    /// Reports and Settings, reachable from the popup itself.
+    private func showOverflowMenu(anchor: NSRect, in view: NSView) {
+        menuPopover?.close()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        popover.contentViewController = NSHostingController(rootView: OverflowMenuView(groups: [
+            [
+                OverflowMenuView.Item("Reports…", symbol: Tokens.Icons.reports) { [weak self] in
+                    self?.menuPopover?.close()
+                    self?.reports.show()
+                },
+                OverflowMenuView.Item("Settings…", symbol: Tokens.Icons.settings) { [weak self] in
+                    self?.menuPopover?.close()
+                    self?.settingsWindow.show()
+                },
+            ],
+            [
+                OverflowMenuView.Item("Quit Hypertime", symbol: Tokens.Icons.quit, isDestructive: true) {
+                    NSApp.terminate(nil)
+                },
+            ],
+        ]))
+        present(popover, anchor: anchor, in: view)
+        menuPopover = popover
+    }
+
+    /// Jump to any day; days with tracked time are dotted.
+    private func showDayPicker(anchor: NSRect, in view: NSView) {
+        dayPickerPopover?.close()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        popover.contentViewController = NSHostingController(rootView: DayPickerView(
+            viewModel: panel.viewModel,
+            onPick: { [weak self] day in
+                self?.panel.viewModel.showDay(day)
+                self?.dayPickerPopover?.close()
+            }
+        ))
+        present(popover, anchor: anchor, in: view)
+        dayPickerPopover = popover
+    }
+
+    /// Popovers steal key status from the panel; tell it so it does not dismiss underneath them.
+    private func present(_ popover: NSPopover, anchor: NSRect, in view: NSView) {
+        panel.isPresentingPopover = true
+        popover.delegate = self
+        popover.show(relativeTo: anchor, of: view, preferredEdge: .minY)
     }
 
     private func askForCustomPause() {

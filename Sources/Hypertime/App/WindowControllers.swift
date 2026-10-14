@@ -55,7 +55,7 @@ final class SettingsWindowController {
     private let model: AppModel
     private let activation: ActivationController
     let viewModel: SettingsViewModel
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
 
     init(model: AppModel, activation: ActivationController) {
         self.model = model
@@ -65,14 +65,15 @@ final class SettingsWindowController {
 
     func show() {
         if window == nil {
+            // A plain titled window (artboard A-settings). It previously drew its content
+            // through the titlebar with `fullSizeContentView` and a clear background, which put
+            // the form over the traffic lights and left nothing to close the window with.
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Tokens.Size.settingsWidth, height: 560),
-                                  styleMask: [.titled, .closable, .fullSizeContentView],
+                                  styleMask: [.titled, .closable, .miniaturizable],
                                   backing: .buffered,
                                   defer: false)
-            window.title = "Hypertime Settings"
-            window.titlebarAppearsTransparent = true
+            window.title = "Settings"
             window.isReleasedWhenClosed = false
-            window.backgroundColor = .clear
             window.contentView = NSHostingView(rootView: SettingsView(viewModel: viewModel))
             window.center()
             self.window = window

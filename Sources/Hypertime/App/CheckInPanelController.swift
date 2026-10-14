@@ -63,11 +63,16 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     private var dismissWorkItem: DispatchWorkItem?
     /// True once the user has clicked or Cmd+Tabbed into the panel; only then do we hand focus back.
     private var didEngage = false
+    /// Set while the pause chooser or the overflow menu owns the keyboard. Losing key status to
+    /// our own popover must not dismiss the panel it is attached to.
+    var isPresentingPopover = false
 
     /// Where to hang the panel: the status item's screen frame, or nil while it has no place in
     /// the menu bar (not yet laid out at launch, or pushed into the overflow).
     var anchorProvider: (() -> NSRect?)?
     var onPauseRequested: ((NSView) -> Void)?
+    var onMenuRequested: ((NSView) -> Void)?
+    var onDayPickerRequested: ((NSView) -> Void)?
 
     var isVisible: Bool { panel.isVisible }
     var isKey: Bool { panel.isKeyWindow }
@@ -124,6 +129,14 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         viewModel.onPauseRequested = { [weak self] in
             guard let self else { return }
             self.onPauseRequested?(self.hoverView)
+        }
+        viewModel.onMenuRequested = { [weak self] in
+            guard let self else { return }
+            self.onMenuRequested?(self.hoverView)
+        }
+        viewModel.onDayPickerRequested = { [weak self] in
+            guard let self else { return }
+            self.onDayPickerRequested?(self.hoverView)
         }
         presentation.onHeightRequest = { [weak self] height in self?.layoutPanel(height: height) }
     }
@@ -318,6 +331,12 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Y of the day list's header row inside `view`, for anchoring the calendar popover. The
+    /// list top is measured in SwiftUI's y-down space, so it flips here.
+    func dayHeaderY(in view: NSView) -> CGFloat {
+        max(view.bounds.maxY - presentation.listTop - 18, 0)
+    }
+
     // MARK: - Geometry
 
     /// Grows downward only: the top edge stays anchored under the menu bar icon.
@@ -365,6 +384,14 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     }
 
     // MARK: - NSWindowDelegate
+
+    /// A popup the user opened behaves like any other menu bar popover: it goes when they look
+    /// away. A popup that let itself in has never taken the keyboard, so it is not affected and
+    /// keeps its full auto-hide window.
+    func windowDidResignKey(_ notification: Notification) {
+        guard !isPresentingPopover, panel.isVisible else { return }
+        hide()
+    }
 
     func windowDidBecomeKey(_ notification: Notification) {
         didEngage = true

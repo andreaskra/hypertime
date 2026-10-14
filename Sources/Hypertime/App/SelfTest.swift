@@ -7,7 +7,10 @@ import HypertimeCore
 enum SelfTest {
     private nonisolated(unsafe) static var failures = 0
 
-    static func run(model: AppModel, statusItem: StatusItemController, panel: CheckInPanelController) {
+    static func run(model: AppModel,
+                    statusItem: StatusItemController,
+                    panel: CheckInPanelController,
+                    settingsWindow: SettingsWindowController) {
         let viewModel = panel.viewModel
 
         // The Phase 3 budget is the whole launch, but the pre-main share only exists when the
@@ -32,6 +35,7 @@ enum SelfTest {
             return image.isTemplate && image.size == NSSize(width: 18, height: 18)
         })
         checkAppIcon()
+        checkSettingsWindow(settingsWindow)
         check("popup width matches the design token", CheckInView.width == Tokens.Size.popupWidth)
 
         // Seed a project the way a first commit would.
@@ -223,6 +227,27 @@ enum SelfTest {
         viewModel.projectTextChanged("")
         check("idle with no project named has nothing to start", !viewModel.canToggleTracking)
 
+        // The day list steps back and forward, and edits land on the day being shown.
+        let yesterday = model.day(model.today, offsetBy: -1)
+        viewModel.prepareForShow()
+        check("the list starts on today", viewModel.isShowingToday && viewModel.dayLabel == "TODAY")
+        viewModel.stepDay(-1)
+        check("stepping back leaves today", !viewModel.isShowingToday)
+        check("…and the label names the day", viewModel.visibleDay == yesterday && viewModel.dayLabel != "TODAY",
+              viewModel.dayLabel)
+        let todayBefore = (try? model.store.seconds(project: project!.id, day: model.today)) ?? 0
+        viewModel.saveTotal(projectID: project!.id, text: "3h")
+        check("an edit lands on the day being shown",
+              ((try? model.store.seconds(project: project!.id, day: yesterday)) ?? 0) == 10800)
+        check("…and leaves today alone",
+              ((try? model.store.seconds(project: project!.id, day: model.today)) ?? 0) == todayBefore)
+        check("the calendar marks a day that has time",
+              viewModel.markedDays(in: yesterday).contains(yesterday))
+        viewModel.goToToday()
+        check("the calendar button comes home", viewModel.isShowingToday)
+        check("a month grid is whole weeks",
+              viewModel.monthGrid(for: model.today).allSatisfy { $0.count == 7 })
+
         // Tracking picks itself back up on the next launch, on the project it was last on, and
         // none of the time the app was closed is counted.
         let resumeProject = try? model.store.findOrCreateProject(named: "Self Test")
@@ -313,6 +338,22 @@ enum SelfTest {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
             pollUntilHidden(panel, startedAt: startedAt, attempt: attempt + 1)
         }
+    }
+
+    /// Settings has to be closeable: it once drew its content through the titlebar, which left
+    /// the traffic lights buried under the form.
+    private static func checkSettingsWindow(_ settings: SettingsWindowController) {
+        settings.show()
+        guard let window = settings.window else {
+            check("settings window opens", false)
+            return
+        }
+        check("settings window opens", window.isVisible)
+        check("settings window has a close button",
+              window.styleMask.contains(.closable) && window.standardWindowButton(.closeButton) != nil)
+        check("settings content stays below the titlebar", !window.styleMask.contains(.fullSizeContentView))
+        window.performClose(nil)
+        check("settings window closes", !window.isVisible)
     }
 
     /// The Dock icon: present in the bundle, and actually masked to the macOS icon shape rather

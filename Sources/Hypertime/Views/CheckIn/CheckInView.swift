@@ -138,6 +138,21 @@ struct CheckInView: View {
             .disabled(!viewModel.canToggleTracking)
             .opacity(viewModel.canToggleTracking ? 1 : 0.4)
             .help(viewModel.trackingToggleHelp)
+
+            Button {
+                viewModel.requestMenu()
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Tokens.Palette.textSecondary.color)
+                    .frame(width: Tokens.Size.iconButton, height: Tokens.Size.iconButton)
+                    .background {
+                        RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous)
+                            .fill(Tokens.Palette.rowHover.color)
+                    }
+            }
+            .buttonStyle(.plain)
+            .help("Reports, settings and more")
         }
         .frame(height: Tokens.Size.headerHeight)
     }

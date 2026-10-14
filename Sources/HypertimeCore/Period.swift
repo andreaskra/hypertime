@@ -109,6 +109,37 @@ public enum Period: Hashable, Sendable {
         }
     }
 
+    /// The month of `date` laid out as calendar weeks, padded with nil to whole rows. Used by
+    /// the day picker; pure date maths so it is testable without a view.
+    public static func monthGrid(containing date: LocalDate,
+                                 calendar: Calendar,
+                                 weekStart: Weekday) -> [[LocalDate?]] {
+        let month = Period.month(year: date.year, month: date.month)
+        let days = month.days(calendar: calendar, weekStart: weekStart)
+        guard let first = days.first else { return [] }
+
+        let cal = weekCalendar(calendar, weekStart: weekStart)
+        let weekday = cal.component(.weekday, from: noon(first, cal))
+        // How many blanks sit before the 1st, given where the week starts.
+        let leading = (weekday - weekStart.calendarIndex + 7) % 7
+
+        var cells: [LocalDate?] = Array(repeating: nil, count: leading) + days.map { Optional($0) }
+        while cells.count % 7 != 0 { cells.append(nil) }
+        return stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0..<$0 + 7]) }
+    }
+
+    /// Single-letter weekday headers in the order the grid uses them.
+    public static func weekdayInitials(calendar: Calendar,
+                                       weekStart: Weekday,
+                                       locale: Locale = .autoupdatingCurrent) -> [String] {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = locale
+        let symbols = formatter.veryShortWeekdaySymbols ?? ["S", "M", "T", "W", "T", "F", "S"]
+        let offset = weekStart.calendarIndex - 1
+        return (0..<7).map { symbols[($0 + offset) % symbols.count] }
+    }
+
     // MARK: Titles
 
     /// Display title, e.g. "Mon 7 Sep 2026", "Week 37 · 7–13 Sep 2026", "September 2026", "2026".

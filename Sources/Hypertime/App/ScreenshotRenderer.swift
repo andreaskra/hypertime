@@ -114,6 +114,21 @@ enum ScreenshotRenderer {
             render("popup-scrolled", AnyView(CheckInView(viewModel: emptyCheckIn, presentation: presentation)), in: url)
         }
 
+        render("overflow-menu", AnyView(OverflowMenuView(groups: [
+            [OverflowMenuView.Item("Reports…", symbol: Tokens.Icons.reports) {},
+             OverflowMenuView.Item("Settings…", symbol: Tokens.Icons.settings) {}],
+            [OverflowMenuView.Item("Quit Hypertime", symbol: Tokens.Icons.quit, isDestructive: true) {}],
+        ])), in: url)
+
+        checkIn.prepareForShow()
+        render("day-picker", AnyView(DayPickerView(viewModel: checkIn, onPick: { _ in })), in: url)
+
+        checkIn.prepareForShow()
+        checkIn.stepDay(-1)
+        checkIn.timeText = "0:12:34"
+        render("popup-past-day", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+        checkIn.goToToday()
+
         render("pause-popover", AnyView(PausePopoverView(morningHour: model.settings.morningHour,
                                                         validate: { try? model.parser.parse($0).seconds },
                                                         onPick: { _, _ in })), in: url)
