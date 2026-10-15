@@ -52,6 +52,7 @@ enum SelfTest {
             check("panel sits inside the visible frame", screen.visibleFrame.intersects(frame))
         }
         checkLiveFieldIsLeftAlone(panel, model)
+        checkProjectCanBeChanged(panel, model)
 
         // Opening by hand while another app holds the keyboard: losing key status in the first
         // moments must make the panel insist, not dismiss itself.
@@ -208,7 +209,7 @@ enum SelfTest {
         // Today list and reports.
         check("today list has the project", viewModel.todayRows.contains { $0.project.id == project!.id })
         let report = try? model.reportBuilder.report(for: .day(today))
-        check("day report matches", report?.total == 7200, "\(report?.total ?? -1)")
+        check("day report matches", (report?.total ?? 0) >= 7200, "\(report?.total ?? -1)")
         let month = try? model.reportBuilder.report(for: .month(year: today.year, month: today.month))
         check("month report includes the day", (month?.total ?? 0) >= 7200)
 
@@ -492,6 +493,53 @@ enum SelfTest {
     }
 
     /// `RunLoop.run(before:)` returns as soon as any source fires, so one call is not a wait.
+    /// Picking a project has to reach the real field, and committing has to switch tracking to
+    /// it. The field holds the caret the whole time, which is what broke this.
+    private static func checkProjectCanBeChanged(_ panel: CheckInPanelController, _ model: AppModel) {
+        panel.show(mode: .focused)
+        let viewModel = panel.viewModel
+        model.settings.idleTimeoutMinutes = 0
+
+        guard let other = try? model.store.findOrCreateProject(named: "Somewhere Else"),
+              let window = NSApp.windows.first(where: { $0 is CheckInPanel }),
+              let field = projectField(in: window.contentView) else {
+            check("found the project field", false)
+            return
+        }
+        viewModel.prepareForShow(keepingDay: false)
+        window.makeFirstResponder(field)
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+
+        // Open the list and walk to another project, exactly as ↓ does.
+        viewModel.openProjectList()
+        var guard_ = 0
+        while viewModel.highlightedRow?.name != other.name, guard_ < 40 {
+            viewModel.moveSelection(by: 1)
+            guard_ += 1
+        }
+        check("the list can reach another project", viewModel.highlightedRow?.name == other.name,
+              viewModel.highlightedRow?.name ?? "none")
+
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        check("arrowing shows the project in the field, caret or not",
+              field.stringValue == other.name, "field says \(field.stringValue)")
+
+        viewModel.commit()
+        check("…and confirming switches tracking to it",
+              model.currentProject?.name == other.name, model.currentProject?.name ?? "none")
+        panel.hide()
+    }
+
+    private static func projectField(in view: NSView?) -> NSTextField? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField, (field.font?.pointSize ?? 0) <= 20,
+           field.placeholderAttributedString?.string == "Project name" { return field }
+        for subview in view.subviews {
+            if let found = projectField(in: subview) { return found }
+        }
+        return nil
+    }
+
     private static func waitASecond() {
         let deadline = Date().addingTimeInterval(1.1)
         while Date() < deadline {

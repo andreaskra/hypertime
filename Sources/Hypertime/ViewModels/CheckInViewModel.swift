@@ -40,6 +40,9 @@ final class CheckInViewModel {
 
     // Project field
     var fieldText = ""
+    /// Bumped when the project name is replaced on purpose — arrowing the list, picking a row,
+    /// opening the popup — so the field takes it even while it holds the caret.
+    private(set) var fieldTextRevision = 0
     /// What the user actually typed; drives filtering while the field may show a highlighted name.
     var query = ""
     var matches: [ProjectMatchRow] = []
@@ -144,7 +147,7 @@ final class CheckInViewModel {
         // R-05: the most recently used project is preselected, even on a fresh launch.
         let current = model.currentProject ?? model.projects().first
         query = ""
-        fieldText = current?.name ?? ""
+        pushFieldText(current?.name ?? "")
         isEditingTime = false
         timeFieldInvalid = false
         invalidTotalRow = nil
@@ -409,6 +412,12 @@ final class CheckInViewModel {
 
     // MARK: - Project field
 
+    /// Replaces the project name on purpose.
+    private func pushFieldText(_ text: String) {
+        fieldText = text
+        fieldTextRevision += 1
+    }
+
     func projectTextChanged(_ text: String) {
         fieldText = text
         query = text
@@ -447,7 +456,7 @@ final class CheckInViewModel {
         }
         let count = matches.count
         highlighted = ((highlighted + delta) % count + count) % count
-        fieldText = matches[highlighted].name
+        pushFieldText(matches[highlighted].name)
     }
 
     var highlightedRow: ProjectMatchRow? {
@@ -473,7 +482,7 @@ final class CheckInViewModel {
     func selectRow(_ index: Int) {
         guard matches.indices.contains(index) else { return }
         let row = matches[index]
-        fieldText = row.name
+        pushFieldText(row.name)
         // Drop the filter so reopening the list shows everything, with this project highlighted.
         query = ""
         if case .project(let project, _) = row {

@@ -17,6 +17,18 @@ struct TaskListView: View {
             ForEach(viewModel.tasks) { task in
                 TaskRowView(viewModel: viewModel, task: task)
             }
+            if viewModel.tasks.isEmpty && !viewModel.isAddingTask {
+                Button { viewModel.addTask() } label: {
+                    Text("Add a task to time a single piece of work")
+                        .font(Tokens.Typography.caption)
+                        .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Tokens.Space.rowInset)
+                        .frame(height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
             if viewModel.isAddingTask {
                 NewTaskField(viewModel: viewModel)
             }
@@ -32,15 +44,13 @@ struct TaskListView: View {
                 .tracking(0.5)
                 .foregroundStyle(Tokens.Palette.textTertiary.color)
             Spacer()
-            Button { viewModel.addTask() } label: {
+            HoverButton(help: "New task under \(viewModel.effectiveName)",
+                        tint: Tokens.Palette.accent) {
+                viewModel.addTask()
+            } label: {
                 Image(systemName: Tokens.Icons.addProject)
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Tokens.Palette.accent)
-                    .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help("New task under \(viewModel.effectiveName)")
         }
         .padding(.horizontal, Tokens.Space.rowInset)
     }

@@ -13,6 +13,7 @@ struct ProjectField: View {
         HStack(spacing: Tokens.Space.s2) {
             EditableField(
                 text: viewModel.fieldText,
+            textRevision: viewModel.fieldTextRevision,
                 placeholder: "Project name",
                 font: Tokens.Typography.body,
                 isFocused: isFocused,
