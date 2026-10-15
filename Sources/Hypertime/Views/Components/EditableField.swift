@@ -4,8 +4,30 @@ import SwiftUI
 /// An `NSTextField` wrapped for SwiftUI so Tab/Enter/Esc/arrow keys can be intercepted
 /// deterministically (§6.4). Phase 2 draws the chrome in SwiftUI, so the field itself is
 /// borderless and transparent.
+/// Reports focus the moment it arrives. `controlTextDidBeginEditing` is no use for this: AppKit
+/// withholds it until the first keystroke, so a field could hold the caret for seconds while the
+/// app still believed nothing was focused — and kept writing into it.
+final class FocusReportingTextField: NSTextField {
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { onFocusChange?(true) }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onFocusChange?(false) }
+        return resigned
+    }
+}
+
 struct EditableField: NSViewRepresentable {
     var text: String
+    /// Bumped by the view model when it means to replace the text. Anything else leaves a field
+    /// that holds the keyboard untouched — a caret is a promise that the text will stay put.
+    var textRevision: Int = 0
     var placeholder: String = ""
     var font: Tokens.FontToken = Tokens.Typography.body
     var textColor: NSColor = Tokens.Palette.textPrimary.nsColor
@@ -20,8 +42,12 @@ struct EditableField: NSViewRepresentable {
     var onEndEditing: () -> Void = {}
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(string: text)
+        let field = FocusReportingTextField(string: text)
         field.delegate = context.coordinator
+        field.onFocusChange = { [weak coordinator = context.coordinator] gained in
+            guard let coordinator else { return }
+            if gained { coordinator.parent.onBeginEditing() } else { coordinator.parent.onEndEditing() }
+        }
         field.isBordered = false
         field.drawsBackground = false
         field.backgroundColor = .clear
@@ -37,14 +63,13 @@ struct EditableField: NSViewRepresentable {
     func updateNSView(_ field: NSTextField, context: Context) {
         context.coordinator.parent = self
 
-        if field.stringValue != text, !context.coordinator.isTyping {
-            let wasEditing = field.currentEditor() != nil
+        let isEditing = field.currentEditor() != nil
+        let wasPushed = textRevision != context.coordinator.lastRevision
+        context.coordinator.lastRevision = textRevision
+        // A field with the caret in it is only ever rewritten on purpose.
+        if field.stringValue != text, !context.coordinator.isTyping, !isEditing || wasPushed {
             field.stringValue = text
-            // The live counter rewrites the field every second; keep the pre-selected text
-            // selected so the first keystroke still replaces it. Only while the window has the
-            // keyboard — otherwise the selection keeps redrawing itself bright in a panel the
-            // user has already left.
-            if wasEditing, selectAllOnFocus, field.window?.isKeyWindow == true {
+            if wasPushed, isEditing, selectAllOnFocus, field.window?.isKeyWindow == true {
                 field.currentEditor()?.selectAll(nil)
             }
         }
@@ -76,6 +101,7 @@ struct EditableField: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: EditableField
         var isTyping = false
+        var lastRevision = 0
 
         init(parent: EditableField) { self.parent = parent }
 

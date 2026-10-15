@@ -19,6 +19,7 @@ struct AmountField: View {
                     .foregroundStyle(Tokens.Palette.accent)
                 EditableField(
                     text: viewModel.timeText,
+                textRevision: viewModel.timeTextRevision,
                     placeholder: "0:00:00",
                     font: Tokens.Typography.timeAdd,
                     isInvalid: viewModel.timeFieldInvalid,

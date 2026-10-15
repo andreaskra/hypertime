@@ -51,6 +51,8 @@ enum SelfTest {
         if let screen = NSScreen.main {
             check("panel sits inside the visible frame", screen.visibleFrame.intersects(frame))
         }
+        checkLiveFieldIsLeftAlone(panel, model)
+
         // Opening by hand while another app holds the keyboard: losing key status in the first
         // moments must make the panel insist, not dismiss itself.
         panel.show(mode: .focused)
@@ -91,10 +93,13 @@ enum SelfTest {
         // ↩ with the list open belongs to the list (R-11): it takes the highlighted row and
         // closes it, rather than committing the popup past a list still being read.
         let highlightedName = viewModel.highlightedRow?.name ?? ""
+        // "Did not commit" means nothing was filed, not that the clock stopped.
+        let bankedBefore = (try? model.store.seconds(project: project!.id, day: model.today)) ?? 0
         check("↩ with the dropdown open is consumed by the dropdown", viewModel.acceptHighlightedRow())
         check("…which closes the list rather than the popup",
               !viewModel.showsProjectList && panel.isVisible)
-        check("…and does not commit", model.engine.pendingSeconds == 0)
+        check("…and does not commit",
+              ((try? model.store.seconds(project: project!.id, day: model.today)) ?? 0) == bankedBefore)
         check("…puts the highlighted row in the field", viewModel.fieldText == highlightedName,
               "\(viewModel.fieldText) vs \(highlightedName)")
         check("…and clears the filter, so reopening shows every project",
@@ -108,7 +113,9 @@ enum SelfTest {
         check("the chevron reopens the dropdown", viewModel.showsProjectList)
         viewModel.selectRow(0)
         check("picking a row closes the dropdown", !viewModel.showsProjectList)
-        check("picking a row does not commit", panel.isVisible && model.engine.pendingSeconds == 0)
+        check("picking a row does not commit",
+              panel.isVisible
+              && ((try? model.store.seconds(project: project!.id, day: model.today)) ?? 0) == bankedBefore)
         check("picking a row fills the field", !viewModel.fieldText.isEmpty)
 
         viewModel.projectTextChanged("self")
@@ -125,6 +132,7 @@ enum SelfTest {
         let frozen = viewModel.timeText
         viewModel.refreshTime()
         check("…and a refresh no longer rewrites it", viewModel.timeText == frozen, viewModel.timeText)
+        viewModel.timeTextChanged("")
         viewModel.focus = .project
         check("leaving an empty amount hands it back to the counter", !viewModel.isEditingTime)
         viewModel.focus = .time
@@ -245,6 +253,7 @@ enum SelfTest {
         check("an untouched Mac pauses tracking", model.engine.status.isPaused)
         model.engine.checkIdle(systemIdleSeconds: 0)
         check("touching it again resumes", model.engine.status.isTracking)
+        model.settings.idleTimeoutMinutes = 0        // a headless run is idle by definition
 
         // Tasks: created under the current project, click to run, checkmark to finish.
         viewModel.projectTextChanged("Self Test")
@@ -364,24 +373,25 @@ enum SelfTest {
             check("panel is ordered out once the dismiss finishes", !panel.isVisible)
             // The menu bar only places the status item once launching is over, which is exactly
             // why the popup used to land in a corner. Everything below needs a placed item.
-            waitForStatusItem(statusItem, panel, attempt: 0)
+            waitForStatusItem(statusItem, panel, model, attempt: 0)
         }
     }
 
     private static func waitForStatusItem(_ statusItem: StatusItemController,
                                           _ panel: CheckInPanelController,
+                                          _ model: AppModel,
                                           attempt: Int) {
         guard statusItem.screenFrame == nil, attempt < 40 else {
-            checkPlacement(statusItem, panel)
+            checkPlacement(statusItem, panel, model)
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            waitForStatusItem(statusItem, panel, attempt: attempt + 1)
+            waitForStatusItem(statusItem, panel, model, attempt: attempt + 1)
         }
     }
 
     /// The popup hangs off the status item, so it has to be *under* it and nowhere else.
-    private static func checkPlacement(_ statusItem: StatusItemController, _ panel: CheckInPanelController) {
+    private static func checkPlacement(_ statusItem: StatusItemController, _ panel: CheckInPanelController, _ model: AppModel) {
         check("status item takes its place in the menu bar", statusItem.screenFrame != nil)
 
         panel.show(mode: .passive)
@@ -426,6 +436,77 @@ enum SelfTest {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
             pollUntilHidden(panel, startedAt: startedAt, attempt: attempt + 1)
         }
+    }
+
+    /// Drives the real `NSTextField` the way a click does, then lets the clock run: the amount
+    /// must not be rewritten, re-selected, or have the caret taken away from it.
+    private static func checkLiveFieldIsLeftAlone(_ panel: CheckInPanelController, _ model: AppModel) {
+        panel.show(mode: .focused)
+        let viewModel = panel.viewModel
+
+        // The counter has to actually be running, or this proves nothing.
+        model.settings.idleTimeoutMinutes = 0
+        if let project = try? model.store.projects().first {
+            model.engine.commit(projectID: project.id, seconds: 0)
+        }
+        waitASecond()
+        model.engine.tick()
+        viewModel.prepareForShow(keepingDay: false)
+        check("the amount is live before the field is touched", model.engine.pendingSeconds > 0,
+              "\(model.engine.pendingSeconds)s pending")
+
+        guard let window = NSApp.windows.first(where: { $0 is CheckInPanel }),
+              let field = amountField(in: window.contentView) else {
+            check("found the amount field in the panel", false)
+            return
+        }
+        check("found the amount field in the panel", true)
+
+        // Exactly what a click does: hand the field the keyboard and let AppKit tell the app.
+        window.makeFirstResponder(field)
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        check("taking the keyboard tells the view model to stop the counter",
+              viewModel.isEditingTime && viewModel.focus == .time,
+              "editing=\(viewModel.isEditingTime) focus=\(viewModel.focus)")
+        field.currentEditor()?.selectedRange = NSRange(location: 2, length: 0)   // caret, no selection
+        let before = field.stringValue
+
+        let pendingBefore = model.engine.pendingSeconds
+        for _ in 0..<2 {
+            waitASecond()
+            model.engine.tick()
+            viewModel.tick()
+        }
+        check("the clock really moved underneath it", model.engine.pendingSeconds > pendingBefore,
+              "\(pendingBefore) -> \(model.engine.pendingSeconds)")
+
+        check("the focused amount keeps its text", field.stringValue == before,
+              "\(before) -> \(field.stringValue)")
+        check("…and the view model stops feeding it", viewModel.timeText == before, viewModel.timeText)
+        let selection = field.currentEditor()?.selectedRange ?? NSRange(location: 0, length: 0)
+        check("…and keeps the caret where it was put", selection.length == 0,
+              "selected \(selection.length) characters")
+        check("…and still holds the keyboard",
+              window.firstResponder === field.currentEditor())
+        panel.hide()
+    }
+
+    /// `RunLoop.run(before:)` returns as soon as any source fires, so one call is not a wait.
+    private static func waitASecond() {
+        let deadline = Date().addingTimeInterval(1.1)
+        while Date() < deadline {
+            RunLoop.current.run(mode: .default, before: deadline)
+        }
+    }
+
+    /// The amount field is the one wearing the big rounded face.
+    private static func amountField(in view: NSView?) -> NSTextField? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField, (field.font?.pointSize ?? 0) > 20 { return field }
+        for subview in view.subviews {
+            if let found = amountField(in: subview) { return found }
+        }
+        return nil
     }
 
     /// Settings has to be closeable: it once drew its content through the titlebar, which left

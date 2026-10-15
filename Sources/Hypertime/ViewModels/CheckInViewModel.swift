@@ -51,6 +51,9 @@ final class CheckInViewModel {
     // Time field
     var timeText = ""
     var isEditingTime = false
+    /// Bumped whenever the amount is replaced on purpose, so the field knows to take it even
+    /// while it holds the caret.
+    private(set) var timeTextRevision = 0
     var timeFieldInvalid = false
     /// Whether ↩ has already taken what is in the time field. The first ↩ normalises the entry
     /// ("90m" → "1:30:00") and stops there; only a second one commits the popup, so a typo is
@@ -161,15 +164,21 @@ final class CheckInViewModel {
         if tasks.contains(where: { isRunning($0) }) { breakdown = model.taskBreakdown(for: visibleDay) }
     }
 
+    /// Replaces the amount on purpose — the field will take it even mid-edit.
+    func pushTimeText(_ text: String) {
+        timeText = text
+        timeTextRevision += 1
+    }
+
     func refreshTime() {
         // A field with the keyboard never has its text replaced underneath the caret.
         guard !isCommitting, !isEditingTime, focus != .time else { return }
         // Idle: no bucket to offer, so the field starts empty (§6.4).
         guard let pending = model.engine.pending else {
-            timeText = ""
+            pushTimeText("")
             return
         }
-        timeText = model.formatter.string(pending.seconds, style: .clock)
+        pushTimeText(model.formatter.string(pending.seconds, style: .clock))
     }
 
     func refreshStatus() {
@@ -497,7 +506,7 @@ final class CheckInViewModel {
         let current = (try? model.parser.parse(timeText)).map(\.seconds) ?? model.engine.pendingSeconds
         let updated = min(max(current + direction * step, 0), 86_400)
         isEditingTime = true
-        timeText = model.formatter.string(updated, style: .clock)
+        pushTimeText(model.formatter.string(updated, style: .clock))
         timeFieldInvalid = false
         isTimeAccepted = false
     }
@@ -514,7 +523,7 @@ final class CheckInViewModel {
             timeFieldInvalid = true
             return true
         }
-        timeText = model.formatter.string(seconds, style: .clock)
+        pushTimeText(model.formatter.string(seconds, style: .clock))
         isEditingTime = true
         isTimeAccepted = true
         return true
