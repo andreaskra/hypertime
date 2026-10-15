@@ -53,6 +53,7 @@ enum SelfTest {
         }
         checkLiveFieldIsLeftAlone(panel, model)
         checkProjectCanBeChanged(panel, model)
+        checkNewTaskSurvivesAClick(panel)
 
         // Opening by hand while another app holds the keyboard: losing key status in the first
         // moments must make the panel insist, not dismiss itself.
@@ -536,6 +537,47 @@ enum SelfTest {
            field.placeholderAttributedString?.string == "Project name" { return field }
         for subview in view.subviews {
             if let found = projectField(in: subview) { return found }
+        }
+        return nil
+    }
+
+    /// Clicking into the new-task row must not dismiss it. A text field resigns first responder
+    /// to its own field editor the moment it is focused, which once read as "the user left".
+    private static func checkNewTaskSurvivesAClick(_ panel: CheckInPanelController) {
+        panel.show(mode: .focused)
+        let viewModel = panel.viewModel
+        viewModel.addTask()
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+
+        guard let window = NSApp.windows.first(where: { $0 is CheckInPanel }),
+              let field = field(in: window.contentView, placeholder: "What needs doing?") else {
+            check("the new-task row appears", false)
+            return
+        }
+        check("the new-task row appears", viewModel.isAddingTask)
+
+        window.makeFirstResponder(field)
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+        check("clicking into it does not dismiss it", viewModel.isAddingTask)
+        check("…and it still holds the keyboard", window.firstResponder === field.currentEditor())
+
+        viewModel.newTaskTitle = "Typed into it"
+        viewModel.commitNewTask()
+        check("…and a title can be typed and kept",
+              viewModel.tasks.contains { $0.title == "Typed into it" })
+        if let created = viewModel.tasks.first(where: { $0.title == "Typed into it" }) {
+            viewModel.deleteTask(created)
+            viewModel.commitDelete()
+        }
+        panel.hide()
+    }
+
+    private static func field(in view: NSView?, placeholder: String) -> NSTextField? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField,
+           field.placeholderAttributedString?.string == placeholder { return field }
+        for subview in view.subviews {
+            if let found = field(in: subview, placeholder: placeholder) { return found }
         }
         return nil
     }

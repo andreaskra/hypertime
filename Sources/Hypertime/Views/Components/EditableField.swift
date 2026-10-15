@@ -7,19 +7,17 @@ import SwiftUI
 /// Reports focus the moment it arrives. `controlTextDidBeginEditing` is no use for this: AppKit
 /// withholds it until the first keystroke, so a field could hold the caret for seconds while the
 /// app still believed nothing was focused — and kept writing into it.
+/// Only *gaining* focus is reported here. A text field hands off to its field editor the instant
+/// it becomes first responder, which calls `resignFirstResponder` on the field itself — reading
+/// that as "focus lost" fires an end-of-editing the moment the user clicks in. Losing focus comes
+/// from `controlTextDidEndEditing`, which is reliable in that direction.
 final class FocusReportingTextField: NSTextField {
-    var onFocusChange: ((Bool) -> Void)?
+    var onFocusGained: (() -> Void)?
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
-        if accepted { onFocusChange?(true) }
+        if accepted { onFocusGained?() }
         return accepted
-    }
-
-    override func resignFirstResponder() -> Bool {
-        let resigned = super.resignFirstResponder()
-        if resigned { onFocusChange?(false) }
-        return resigned
     }
 }
 
@@ -44,9 +42,8 @@ struct EditableField: NSViewRepresentable {
     func makeNSView(context: Context) -> NSTextField {
         let field = FocusReportingTextField(string: text)
         field.delegate = context.coordinator
-        field.onFocusChange = { [weak coordinator = context.coordinator] gained in
-            guard let coordinator else { return }
-            if gained { coordinator.parent.onBeginEditing() } else { coordinator.parent.onEndEditing() }
+        field.onFocusGained = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.onBeginEditing()
         }
         field.isBordered = false
         field.drawsBackground = false
