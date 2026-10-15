@@ -230,3 +230,35 @@ struct ThinScrollIndicator: View {
         .allowsHitTesting(false)
     }
 }
+
+/// A small icon or text button that lights up under the cursor — the popup's header controls
+/// gave no sign they were clickable.
+struct HoverButton<Label: View>: View {
+    var help: String
+    var enabled: Bool = true
+    var tint: Color?
+    var action: () -> Void
+    @ViewBuilder var label: Label
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            label
+                .foregroundStyle(enabled
+                                 ? (tint ?? Tokens.Palette.textTertiary.color)
+                                 : Tokens.Palette.textTertiary.color.opacity(0.4))
+                .padding(.horizontal, Tokens.Space.s1)
+                .frame(height: 18)
+                .background {
+                    RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous)
+                        .fill(isHovering && enabled ? Tokens.Palette.rowHover.color : .clear)
+                }
+                .contentShape(RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .help(help)
+        .onHover { isHovering = $0 && enabled }
+    }
+}

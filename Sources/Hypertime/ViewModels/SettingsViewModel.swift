@@ -10,6 +10,7 @@ final class SettingsViewModel {
     var checkInIntervalMinutes: Int { didSet { settings.checkInIntervalMinutes = checkInIntervalMinutes } }
     var startTrackingOnLaunch: Bool { didSet { settings.startTrackingOnLaunch = startTrackingOnLaunch } }
     var pauseOnSleepAndLock: Bool { didSet { settings.pauseOnSleepAndLock = pauseOnSleepAndLock } }
+    var idleTimeoutMinutes: Int { didSet { settings.idleTimeoutMinutes = idleTimeoutMinutes } }
     var morningHour: Int { didSet { settings.morningHour = morningHour } }
     var passiveAutoHide: Int { didSet { settings.passivePopupAutoHideSeconds = passiveAutoHide } }
     var timeDisplayStyle: TimeStyle { didSet { settings.timeDisplayStyle = timeDisplayStyle; onAppearanceChanged?() } }
@@ -38,6 +39,7 @@ final class SettingsViewModel {
         checkInIntervalMinutes = settings.checkInIntervalMinutes
         startTrackingOnLaunch = settings.startTrackingOnLaunch
         pauseOnSleepAndLock = settings.pauseOnSleepAndLock
+        idleTimeoutMinutes = settings.idleTimeoutMinutes
         morningHour = settings.morningHour
         passiveAutoHide = settings.passivePopupAutoHideSeconds
         timeDisplayStyle = settings.timeDisplayStyle

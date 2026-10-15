@@ -200,3 +200,91 @@ struct TaskEngineTests {
         #expect(try store.seconds(project: project.id, day: d("2026-10-14")) == 30)
     }
 }
+
+@MainActor
+@Suite("TrackingEngine — idle")
+struct IdleEngineTests {
+    let clock = TestClock()
+    let store: Store
+    let settings: Settings
+    let engine: TrackingEngine
+    let project: Project
+
+    init() throws {
+        clock.set(year: 2026, month: 10, day: 15, hour: 9)
+        store = try Store.inMemory(clock: clock)
+        settings = Settings.ephemeral()
+        settings.idleTimeoutMinutes = 5
+        engine = TrackingEngine(store: store, clock: clock, settings: settings)
+        project = try store.findOrCreateProject(named: "Hypertime")
+    }
+
+    func run(seconds: Int) {
+        for _ in 0..<seconds { clock.advance(by: 1); engine.tick() }
+    }
+
+    @Test("an untouched Mac pauses tracking and gives the idle time back")
+    func pausesAndRollsBack() throws {
+        engine.start(projectID: project.id)
+        run(seconds: 600)                                  // ten minutes at the desk…
+        #expect(engine.pendingSeconds == 600)
+
+        engine.checkIdle(systemIdleSeconds: 300)           // …the last five of them untouched
+        #expect(engine.status.isPaused)
+        if case .paused(_, _, let reason) = engine.status { #expect(reason == .idle) }
+        #expect(engine.pendingSeconds == 300)              // the idle stretch is not work
+    }
+
+    @Test("nothing happens below the threshold")
+    func belowThreshold() {
+        engine.start(projectID: project.id)
+        run(seconds: 120)
+        engine.checkIdle(systemIdleSeconds: 299)
+        #expect(engine.status.isTracking)
+        #expect(engine.pendingSeconds == 120)
+    }
+
+    @Test("touching the Mac again resumes where it left off")
+    func resumes() async throws {
+        engine.start(projectID: project.id)
+        run(seconds: 400)
+        let stream = engine.events
+        engine.checkIdle(systemIdleSeconds: 300)
+        #expect(engine.status.isPaused)
+
+        engine.checkIdle(systemIdleSeconds: 0)
+        #expect(engine.status.isTracking)
+        run(seconds: 30)
+        #expect(engine.pendingSeconds == 130)              // 100 kept + 30 new
+
+        engine.finishEvents()
+        var resumed = 0
+        for await event in stream where event == .pauseEnded { resumed += 1 }
+        #expect(resumed == 1)
+    }
+
+    @Test("a running task gives its idle time back too")
+    func taskRollback() throws {
+        settings.flushIntervalSeconds = 5
+        let task = try store.createTask(projectID: project.id, title: "Left running")
+        engine.startTask(task)
+        run(seconds: 600)
+        #expect(engine.activeTaskSeconds == 600)
+
+        engine.checkIdle(systemIdleSeconds: 300)
+        #expect(engine.status.isPaused)
+        #expect(engine.activeTaskSeconds == 300)
+        #expect(try store.taskSeconds(task: task.id) == 300)
+        #expect(try store.seconds(project: project.id, day: LocalDate.parse("2026-10-15")!) == 300)
+    }
+
+    @Test("idle detection off means it never interferes")
+    func disabled() {
+        settings.idleTimeoutMinutes = 0
+        engine.start(projectID: project.id)
+        run(seconds: 300)
+        engine.checkIdle(systemIdleSeconds: 9999)
+        #expect(engine.status.isTracking)
+        #expect(engine.pendingSeconds == 300)
+    }
+}

@@ -15,6 +15,11 @@ struct SettingsView: View {
                 }
                 Toggle("Start tracking when Hypertime launches", isOn: $viewModel.startTrackingOnLaunch)
                 Toggle("Pause while asleep or locked", isOn: $viewModel.pauseOnSleepAndLock)
+                Picker("Stop after no activity for", selection: $viewModel.idleTimeoutMinutes) {
+                    ForEach(Settings.idleTimeoutChoices, id: \.self) { minutes in
+                        Text(minutes == 0 ? "Never" : "\(minutes) min").tag(minutes)
+                    }
+                }
                 Picker("Morning starts at", selection: $viewModel.morningHour) {
                     ForEach(0..<24, id: \.self) { hour in
                         Text(String(format: "%02d:00", hour)).tag(hour)

@@ -64,6 +64,7 @@ final class SystemEventsObserver {
     }
 
     private func wake(reason: PauseReason) {
+        // Idle resumes itself from the tick; sleep and lock come through here.
         guard case .paused(_, _, let current) = model.engine.status, current == reason else { return }
         model.engine.resume()
         Log.engine.info("Resumed after \(reason.rawValue, privacy: .public)")

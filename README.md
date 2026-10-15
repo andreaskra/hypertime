@@ -47,7 +47,12 @@ written to a project until you confirm, so an unanswered popup can never misfile
 - Editing the amount edits the bucket itself: confirm `0:20` out of `1:05` and the remaining
   45 minutes are gone, not hidden.
 
-Time is never counted while the Mac sleeps or the screen is locked. Tracking pauses
+Time is never counted while the Mac sleeps, while the screen is locked, or while you are simply
+not there: after ten minutes without a keystroke or a mouse move (configurable, or off)
+Hypertime stops and gives the idle stretch back, so a laptop left awake overnight does not
+invent a night's work. Touching it again picks up where you left off.
+
+ Tracking pauses
 automatically and resumes with a check-in when you come back. Quitting stops tracking, and the
 hours the app spends closed are never counted — a relaunch starts a fresh bucket from that
 moment.
@@ -140,7 +145,7 @@ settings, and can be overridden per export.
 
 ## Settings
 
-Check-in interval · start tracking on launch · pause on sleep and lock ·
+Check-in interval · start tracking on launch · pause on sleep and lock · idle timeout ·
 morning hour for "pause until 07:00" ·
 passive popup auto-hide · time display format · elapsed time in the menu bar · week start ·
 Dock and Cmd+Tab visibility · launch at login · CSV defaults.
@@ -159,7 +164,7 @@ Back it up by copying that file. If it ever becomes unreadable, Hypertime moves 
 ## Development
 
 ```bash
-swift test                  # 129 tests over HypertimeCore
+swift test                  # 134 tests over HypertimeCore
 scripts/run.sh              # build dist/Hypertime.app and launch it
 scripts/run.sh --seed-demo  # same, against a seeded demo database
 scripts/release.sh          # signed .app + .zip + .dmg in dist/

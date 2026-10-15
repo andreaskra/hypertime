@@ -51,6 +51,13 @@ enum SelfTest {
         if let screen = NSScreen.main {
             check("panel sits inside the visible frame", screen.visibleFrame.intersects(frame))
         }
+        // Opening by hand while another app holds the keyboard: losing key status in the first
+        // moments must make the panel insist, not dismiss itself.
+        panel.show(mode: .focused)
+        panel.windowDidResignKey(Notification(name: Notification.Name("self-test")))
+        check("a just-opened popup does not dismiss when key status is contested", panel.isVisible)
+        panel.hide()
+
         // With nowhere in the menu bar to hang off — not yet placed, or pushed into the overflow
         // — the panel belongs in the top right, never in a corner of the desktop.
         let realAnchor = panel.anchorProvider
@@ -227,6 +234,18 @@ enum SelfTest {
         viewModel.projectTextChanged("")
         check("idle with no project named has nothing to start", !viewModel.canToggleTracking)
 
+        // Idle: the system reading must be a real number, and the engine must act on it.
+        let idle = AppModel.systemIdleSeconds()
+        check("system idle time is readable without a permission prompt", idle >= 0, "\(idle)s")
+        model.settings.idleTimeoutMinutes = 5
+        model.engine.commit(projectID: project!.id, seconds: 0)
+        model.engine.checkIdle(systemIdleSeconds: 299)
+        check("below the threshold tracking carries on", model.engine.status.isTracking)
+        model.engine.checkIdle(systemIdleSeconds: 600)
+        check("an untouched Mac pauses tracking", model.engine.status.isPaused)
+        model.engine.checkIdle(systemIdleSeconds: 0)
+        check("touching it again resumes", model.engine.status.isTracking)
+
         // Tasks: created under the current project, click to run, checkmark to finish.
         viewModel.projectTextChanged("Self Test")
         viewModel.addTask()
@@ -288,8 +307,32 @@ enum SelfTest {
               ((try? model.store.seconds(project: project!.id, day: model.today)) ?? 0) == todayBefore)
         check("the calendar marks a day that has time",
               viewModel.markedDays(in: yesterday).contains(yesterday))
+        check("the future is out of reach", !viewModel.canStepForward == false || viewModel.visibleDay < model.today)
         viewModel.goToToday()
         check("the calendar button comes home", viewModel.isShowingToday)
+        check("…and forward stops there", !viewModel.canStepForward)
+        viewModel.stepDay(1)
+        check("…so stepping forward from today does nothing", viewModel.isShowingToday)
+        viewModel.showDay(model.day(model.today, offsetBy: 3))
+        check("…and a future date cannot be jumped to", viewModel.isShowingToday)
+
+        // The day you were last looking at survives closing and reopening by hand, but a
+        // scheduled nudge always comes back to today.
+        viewModel.stepDay(-1)
+        viewModel.prepareForShow(keepingDay: true)
+        check("reopening by hand keeps the day", !viewModel.isShowingToday)
+        viewModel.prepareForShow(keepingDay: false)
+        check("a nudge comes back to today", viewModel.isShowingToday)
+
+        // A focused field is never rewritten underneath the caret.
+        viewModel.focus = .time
+        viewModel.isEditingTime = false
+        let typed = "0:07"
+        viewModel.timeText = typed
+        viewModel.refreshTime()
+        check("a focused amount field is left alone even unedited", viewModel.timeText == typed,
+              viewModel.timeText)
+        viewModel.focus = .none
         check("a month grid is whole weeks",
               viewModel.monthGrid(for: model.today).allSatisfy { $0.count == 7 })
 

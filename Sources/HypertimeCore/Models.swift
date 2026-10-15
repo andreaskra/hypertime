@@ -171,6 +171,8 @@ public let maxTaskTitleLength = 200
 
 public enum PauseReason: String, Codable, Sendable {
     case manual, systemSleep, screenLock
+    /// The Mac was awake but nobody was touching it (A-05).
+    case idle
 }
 
 public enum TrackingStatus: Equatable, Sendable {

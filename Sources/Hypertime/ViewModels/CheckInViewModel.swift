@@ -60,6 +60,7 @@ final class CheckInViewModel {
 
     // Day list — "today" by default, but it steps back and forward (R-17/R-18 in the popup).
     var visibleDay: LocalDate = LocalDate(year: 1970, month: 1, day: 1)
+    private var hasVisibleDay = false
     var todayRows: [ReportRow] = []
     var invalidTotalRow: UUID?
 
@@ -131,9 +132,12 @@ final class CheckInViewModel {
     // MARK: - Refresh
 
     /// Called every time the popup is about to be shown.
-    func prepareForShow() {
+    /// `keepingDay` is true when the user opened the popup themselves: it stays on whatever day
+    /// they were last looking at. A scheduled nudge always comes back to today.
+    func prepareForShow(keepingDay: Bool = false) {
         isCommitting = false
-        visibleDay = model.today
+        if !keepingDay || !hasVisibleDay { visibleDay = model.today }
+        hasVisibleDay = true
         // R-05: the most recently used project is preselected, even on a fresh launch.
         let current = model.currentProject ?? model.projects().first
         query = ""
@@ -158,7 +162,8 @@ final class CheckInViewModel {
     }
 
     func refreshTime() {
-        guard !isCommitting, !isEditingTime else { return }
+        // A field with the keyboard never has its text replaced underneath the caret.
+        guard !isCommitting, !isEditingTime, focus != .time else { return }
         // Idle: no bucket to offer, so the field starts empty (§6.4).
         guard let pending = model.engine.pending else {
             timeText = ""
@@ -183,15 +188,23 @@ final class CheckInViewModel {
         isShowingToday ? "TODAY" : model.dayLabel(visibleDay).uppercased()
     }
 
+    /// Tomorrow has nothing in it and nothing can be tracked there, so forward stops at today.
+    var canStepForward: Bool { visibleDay < model.today }
+
     func stepDay(_ delta: Int) {
-        visibleDay = model.day(visibleDay, offsetBy: delta)
+        let target = model.day(visibleDay, offsetBy: delta)
+        guard target <= model.today else { return }
+        visibleDay = target
         refreshRows()
     }
 
     func showDay(_ day: LocalDate) {
+        guard day <= model.today else { return }
         visibleDay = day
         refreshRows()
     }
+
+    func isFuture(_ day: LocalDate) -> Bool { day > model.today }
 
     func goToToday() {
         showDay(model.today)

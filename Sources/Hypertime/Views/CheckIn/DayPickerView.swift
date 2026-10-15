@@ -77,6 +77,7 @@ struct DayPickerView: View {
     private func dayCell(_ day: LocalDate, hasTime: Bool) -> some View {
         let isSelected = day == viewModel.visibleDay
         let isToday = day == viewModel.todayDate
+        let isFuture = viewModel.isFuture(day)
         return Button {
             onPick(day)
         } label: {
@@ -106,5 +107,8 @@ struct DayPickerView: View {
             .contentShape(RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous))
         }
         .buttonStyle(.plain)
+        // Nothing can be tracked tomorrow, so there is nothing to look at there.
+        .disabled(isFuture)
+        .opacity(isFuture ? 0.3 : 1)
     }
 }

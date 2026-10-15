@@ -257,6 +257,46 @@ public final class TrackingEngine {
         broadcaster.send(.dataChanged)
     }
 
+    // MARK: - Idle (A-05)
+
+    /// The app measures how long the Mac has gone untouched and hands the number in; the engine
+    /// decides what it means. Crossing the threshold rolls the idle stretch back out of whatever
+    /// was accruing — it was never work — and pauses.
+    public func checkIdle(systemIdleSeconds: Seconds) {
+        guard let timeout = settings.idleTimeout else { return }
+
+        if case .paused(_, _, .idle) = status {
+            // Back at the keyboard: pick up where we left off.
+            if systemIdleSeconds < timeout {
+                resume()
+                broadcaster.send(.pauseEnded)
+            }
+            return
+        }
+
+        guard status.isTracking, systemIdleSeconds >= timeout else { return }
+        rollBack(seconds: systemIdleSeconds)
+        pause(until: .distantFuture, reason: .idle)
+    }
+
+    /// Removes time that turned out not to be work, from whichever counter took it.
+    private func rollBack(seconds: Seconds) {
+        guard seconds > 0 else { return }
+        if let taskID = activeTaskID, let projectID = taskProjectID {
+            let fromUnwritten = min(taskUnwritten, seconds)
+            taskUnwritten -= fromUnwritten
+            let remainder = seconds - fromUnwritten
+            if remainder > 0 {
+                try? store.addTaskSeconds(task: taskID, project: projectID, day: today, -remainder)
+            }
+            taskAccruedSinceStart = max(taskAccruedSinceStart - seconds, 0)
+        } else if var bucket = pending {
+            bucket.seconds = max(bucket.seconds - seconds, 0)
+            pending = bucket
+        }
+        broadcaster.send(.dataChanged)
+    }
+
     // MARK: - Ticking
 
     public func tick() {

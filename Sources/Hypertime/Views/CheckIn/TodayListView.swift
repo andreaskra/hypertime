@@ -14,16 +14,12 @@ struct TodayListView: View {
         CGFloat(min(max(viewModel.todayRows.count, 1), Tokens.Size.todayListMaxVisibleRows)) * Tokens.Size.listRowHeight
     }
 
-    private func dayStep(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func dayStep(_ symbol: String, _ help: String, enabled: Bool = true,
+                         _ action: @escaping () -> Void) -> some View {
+        HoverButton(help: help, enabled: enabled, action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(Tokens.Palette.textTertiary.color)
-                .frame(width: 16, height: 18)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .help(help)
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -32,18 +28,16 @@ struct TodayListView: View {
         VStack(alignment: .leading, spacing: Tokens.Space.s1) {
             HStack(spacing: 2) {
                 dayStep(Tokens.Icons.navBack, "Previous day") { viewModel.stepDay(-1) }
-                Button { viewModel.requestDayPicker() } label: {
+                HoverButton(help: "Jump to a date",
+                            tint: viewModel.isShowingToday ? nil : Tokens.Palette.accent) {
+                    viewModel.requestDayPicker()
+                } label: {
                     Image(systemName: "calendar")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(viewModel.isShowingToday
-                                         ? Tokens.Palette.textTertiary.color
-                                         : Tokens.Palette.accent)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help("Jump to a date")
-                dayStep(Tokens.Icons.navForward, "Next day") { viewModel.stepDay(1) }
+                dayStep(Tokens.Icons.navForward, "Next day", enabled: viewModel.canStepForward) {
+                    viewModel.stepDay(1)
+                }
 
                 // Once the list scrolls, the label says how much is out of sight (artboard
                 // "TODAY · 9 PROJECTS").
@@ -56,6 +50,15 @@ struct TodayListView: View {
                                      ? Tokens.Palette.textTertiary.color
                                      : Tokens.Palette.accent)
                     .padding(.leading, Tokens.Space.s1)
+                if !viewModel.isShowingToday {
+                    HoverButton(help: "Back to today", tint: Tokens.Palette.accent) {
+                        viewModel.goToToday()
+                    } label: {
+                        Text("Today")
+                            .font(Tokens.Typography.caption)
+                    }
+                    .padding(.leading, Tokens.Space.s1)
+                }
                 Spacer(minLength: Tokens.Space.s2)
                 Text(viewModel.todayTotalText)
                     .font(Tokens.Typography.timeCell)

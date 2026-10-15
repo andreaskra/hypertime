@@ -66,6 +66,11 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     /// Set while the pause chooser or the overflow menu owns the keyboard. Losing key status to
     /// our own popover must not dismiss the panel it is attached to.
     var isPresentingPopover = false
+    /// When the panel was last opened deliberately. Clicking a menu bar item does not take the
+    /// keyboard away from another app's text field, so for a moment after opening the panel has
+    /// to insist rather than give up and dismiss itself.
+    private var focusedShownAt: Date?
+    private let keyGrace: TimeInterval = 0.8
 
     /// Where to hang the panel: the status item's screen frame, or nil while it has no place in
     /// the menu bar (not yet laid out at launch, or pushed into the overflow).
@@ -155,7 +160,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
 
-        viewModel.prepareForShow()
+        viewModel.prepareForShow(keepingDay: mode == .focused)
         presentation.commitPhase = .idle
         presentation.mode = mode
         if !panel.isVisible { presentation.isAppeared = false }
@@ -171,11 +176,13 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         case .focused:
             didEngage = true
             cancelAutoHide()
+            focusedShownAt = Date()
             activation.activate {
                 panel.makeKeyAndOrderFront(nil)
             }
             appear(Tokens.Motion.popupAppearFocused)
             viewModel.focus = .project
+            insistOnKey(attempt: 0)
         }
         Log.panel.debug("show(\(String(describing: mode), privacy: .public))")
     }
@@ -191,6 +198,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
 
     /// Animated dismiss; `orderOut` happens when the animation is done. Never changes focus.
     func hide() {
+        focusedShownAt = nil
         cancelAutoHide()
         guard panel.isVisible else { return }
         withAnimation(Tokens.Motion.popupDismiss.animation(reduceMotion: reduceMotion)) {
@@ -399,11 +407,26 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
 
     // MARK: - NSWindowDelegate
 
+    /// Takes the keyboard back if something else still has it just after opening. Bounded, so a
+    /// genuinely uncooperative app cannot start a fight that never ends.
+    private func insistOnKey(attempt: Int) {
+        guard attempt < 5, panel.isVisible, !panel.isKeyWindow else { return }
+        activation.activate { panel.makeKeyAndOrderFront(nil) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            MainActor.assumeIsolated { self?.insistOnKey(attempt: attempt + 1) }
+        }
+    }
+
     /// A popup the user opened behaves like any other menu bar popover: it goes when they look
     /// away. A popup that let itself in has never taken the keyboard, so it is not affected and
     /// keeps its full auto-hide window.
     func windowDidResignKey(_ notification: Notification) {
         guard !isPresentingPopover, panel.isVisible else { return }
+        // Just opened: the app that had the keyboard is still holding on. Insist, do not leave.
+        if let shownAt = focusedShownAt, Date().timeIntervalSince(shownAt) < keyGrace {
+            insistOnKey(attempt: 0)
+            return
+        }
         hide()
     }
 

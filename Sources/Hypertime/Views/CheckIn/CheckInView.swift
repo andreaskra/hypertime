@@ -113,19 +113,17 @@ struct CheckInView: View {
 
     private var header: some View {
         HStack(spacing: Tokens.Space.s2) {
-            Text("What are you working on?")
-                .font(Tokens.Typography.heading)
-                .foregroundStyle(Tokens.Palette.textSecondary.color)
-
-            Spacer(minLength: Tokens.Space.s2)
-
+            // What is being tracked leads; the question it answers was only ever decoration.
             HStack(spacing: Tokens.Space.s1) {
                 indicator
                 Text(stateLine)
                     .font(Tokens.Typography.heading)
                     .foregroundStyle(Tokens.Palette.textSecondary.color)
                     .lineLimit(1)
+                    .truncationMode(.middle)
             }
+
+            Spacer(minLength: Tokens.Space.s2)
 
             Button {
                 viewModel.toggleTracking()

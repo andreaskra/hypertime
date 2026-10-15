@@ -11,6 +11,7 @@ public final class Settings: @unchecked Sendable {
         case weekStart
         case timeDisplayStyle
         case pauseOnSleepAndLock
+        case idleTimeoutMinutes
         case morningHour
         case maxGapSeconds
         case csvDelimiter
@@ -36,6 +37,7 @@ public final class Settings: @unchecked Sendable {
             Key.weekStart.rawValue: Weekday.monday.rawValue,
             Key.timeDisplayStyle.rawValue: TimeStyle.clock.rawValue,
             Key.pauseOnSleepAndLock.rawValue: true,
+            Key.idleTimeoutMinutes.rawValue: 10,
             Key.morningHour.rawValue: 7,
             Key.maxGapSeconds.rawValue: 120,
             Key.csvDelimiter.rawValue: ",",
@@ -103,6 +105,19 @@ public final class Settings: @unchecked Sendable {
         get { defaults.bool(forKey: Key.pauseOnSleepAndLock.rawValue) }
         set { set(newValue, .pauseOnSleepAndLock) }
     }
+
+    /// Stop tracking after this long without a keystroke or a mouse move; 0 turns it off.
+    public var idleTimeoutMinutes: Int {
+        get { defaults.integer(forKey: Key.idleTimeoutMinutes.rawValue) }
+        set { set(max(newValue, 0), .idleTimeoutMinutes) }
+    }
+
+    public var idleTimeout: Seconds? {
+        let minutes = idleTimeoutMinutes
+        return minutes > 0 ? minutes * 60 : nil
+    }
+
+    public static let idleTimeoutChoices = [0, 5, 10, 15, 30, 60]
 
     public var morningHour: Int {
         get { defaults.integer(forKey: Key.morningHour.rawValue) }

@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import HypertimeCore
 
@@ -74,7 +75,11 @@ final class AppModel {
         }
 
         let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.engine.tick() }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.engine.tick()
+                self.engine.checkIdle(systemIdleSeconds: Self.systemIdleSeconds())
+            }
         }
         timer.tolerance = 0.2
         RunLoop.main.add(timer, forMode: .common)
@@ -106,6 +111,14 @@ final class AppModel {
     }
 
     // MARK: - Convenience
+
+    /// Seconds since the Mac last saw any human input. Reads a timestamp the window server
+    /// already keeps — no input monitoring, no permission prompt.
+    static func systemIdleSeconds() -> Seconds {
+        guard let anyEvent = CGEventType(rawValue: ~0) else { return 0 }
+        let seconds = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: anyEvent)
+        return seconds.isFinite && seconds > 0 ? Int(seconds) : 0
+    }
 
     var reportBuilder: ReportBuilder {
         ReportBuilder(store: store, engine: engine, clock: clock, weekStart: settings.weekStart)
