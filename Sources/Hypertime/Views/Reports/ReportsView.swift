@@ -42,7 +42,7 @@ struct ReportsView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 240)
+            .frame(width: 210)
 
             HStack(spacing: Tokens.Space.s1) {
                 Button { viewModel.go(-1) } label: { Image(systemName: Tokens.Icons.navBack) }
@@ -56,12 +56,14 @@ struct ReportsView: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
 
+            // The title is the only thing here that may shrink: every control has to stay
+            // reachable at the narrowest the window can go.
             Text(viewModel.title)
                 .font(Tokens.Typography.periodTitle)
                 .foregroundStyle(Tokens.Palette.textPrimary.color)
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .layoutPriority(1)
+                .truncationMode(.tail)
+                .layoutPriority(-1)
 
             Spacer(minLength: Tokens.Space.s2)
 
@@ -116,6 +118,9 @@ struct ReportsView: View {
                 .foregroundStyle(viewModel.errorMessage == nil
                                  ? Tokens.Palette.textTertiary.color
                                  : Tokens.Palette.invalid.color)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(-1)
             Spacer()
             if viewModel.showsAverages {
                 stat("Per day", viewModel.averagePerDay)

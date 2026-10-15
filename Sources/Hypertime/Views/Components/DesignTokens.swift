@@ -187,7 +187,9 @@ enum Tokens {
         static let toolbarHeight: CGFloat = 52
         /// The Reports toolbar shares its row with the window's traffic lights.
         static let trafficLightInset: CGFloat = 78
-        static let reportsDefault = CGSize(width: 760, height: 540)
+        static let reportsDefault = CGSize(width: 860, height: 560)
+        /// Below this the toolbar cannot hold its controls, so the window refuses to go smaller.
+        static let reportsMinimum = CGSize(width: 780, height: 420)
         static let settingsWidth: CGFloat = 480
         /// Header row and indicator dot, from the popup anatomy in HANDOFF.md.
         static let headerHeight: CGFloat = 20

@@ -166,6 +166,14 @@ enum ScreenshotRenderer {
                                                                               height: Tokens.Size.reportsDefault.height)),
                    in: url)
         }
+        // The window remembers whatever size it was last left at; check the narrow end too.
+        reports.kind = .week
+        render("reports-narrow",
+               AnyView(ReportsView(viewModel: reports, onExport: {})
+                   .frame(width: Tokens.Size.reportsMinimum.width,
+                          height: Tokens.Size.reportsMinimum.height)),
+               in: url)
+
         reports.isSliding = true
         reports.kind = .week
         reports.go(-2)

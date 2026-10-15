@@ -35,7 +35,13 @@ final class ReportsWindowController {
             window.backgroundColor = .clear
             window.contentView = NSHostingView(rootView: root)
             window.center()
+            // A frame saved before the toolbar grew must not keep the window too small for it.
+            window.contentMinSize = Tokens.Size.reportsMinimum
             window.setFrameAutosaveName("HypertimeReports")
+            if window.frame.width < Tokens.Size.reportsDefault.width {
+                window.setContentSize(Tokens.Size.reportsDefault)
+                window.center()
+            }
             self.window = window
         }
         activation.activate {
