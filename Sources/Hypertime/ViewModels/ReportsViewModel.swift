@@ -24,13 +24,32 @@ final class ReportsViewModel {
     private let model: AppModel
 
     var kind: PeriodKind = .day {
-        didSet { period = Period.containing(anchor, kind: kind, calendar: calendar, weekStart: weekStart); reload() }
+        didSet { rebuildPeriod() }
+    }
+
+    /// Rebuilds the period for the current kind and alignment, keeping the day in view.
+    private func rebuildPeriod() {
+        if isSliding {
+            let length = Period.spanLength(for: kind)
+            // The window ends on the day being looked at, so stepping back walks into the past.
+            let end = min(anchor, model.today)
+            period = .span(start: model.day(end, offsetBy: -(length - 1)), days: length)
+        } else {
+            period = Period.containing(anchor, kind: kind, calendar: calendar, weekStart: weekStart)
+        }
+        reload()
     }
     private(set) var period: Period
     private(set) var report: Report?
     private(set) var anchor: LocalDate
     var errorMessage: String?
     var newProjectName = ""
+
+    /// Calendar periods snap to weeks and months; a sliding window keeps the same width and
+    /// steps a day at a time, so any arbitrary stretch can be looked at.
+    var isSliding = false {
+        didSet { rebuildPeriod() }
+    }
 
     enum Presentation: String, CaseIterable { case chart, table }
     var presentation: Presentation = .chart
@@ -56,10 +75,7 @@ final class ReportsViewModel {
     var todayDate: LocalDate { model.today }
 
     /// Months of a year period, for the year breakdown.
-    var months: [Period] {
-        guard case .year(let year) = period else { return [] }
-        return (1...12).map { .month(year: year, month: $0) }
-    }
+    var months: [Period] { period.months(calendar: calendar, weekStart: weekStart) }
 
     func reload() {
         do {
@@ -76,14 +92,14 @@ final class ReportsViewModel {
 
     func go(_ delta: Int) {
         period = period.shifted(by: delta, calendar: calendar, weekStart: weekStart)
-        anchor = period.range(calendar: calendar, weekStart: weekStart).lowerBound
+        // Anchor on the end of the window: that is the day a sliding range is "at".
+        anchor = period.range(calendar: calendar, weekStart: weekStart).upperBound
         reload()
     }
 
     func goToToday() {
         anchor = model.today
-        period = Period.containing(anchor, kind: kind, calendar: calendar, weekStart: weekStart)
-        reload()
+        rebuildPeriod()
     }
 
     func showDay(_ day: LocalDate) {
@@ -94,8 +110,7 @@ final class ReportsViewModel {
     func show(_ kind: PeriodKind, anchoredAt day: LocalDate) {
         anchor = day
         if self.kind == kind {
-            period = Period.containing(day, kind: kind, calendar: calendar, weekStart: weekStart)
-            reload()
+            rebuildPeriod()
         } else {
             self.kind = kind                              // didSet rebuilds the period and reloads
         }
@@ -164,6 +179,17 @@ final class ReportsViewModel {
     }
 
     var isEditable: Bool { kind == .day || kind == .week }
+
+    // MARK: - Stats for the range on screen
+
+    var total: Seconds { report?.total ?? 0 }
+    var calendarDays: Int { max(report?.days.count ?? 0, 1) }
+    var trackedDays: Int { (report?.perDayTotal.values.filter { $0 > 0 }.count) ?? 0 }
+    /// Spread across every day in the range, worked or not.
+    var averagePerDay: Seconds { total / calendarDays }
+    /// Spread across the days that actually have time on them.
+    var averagePerTrackedDay: Seconds { trackedDays > 0 ? total / trackedDays : 0 }
+    var showsAverages: Bool { (report?.days.count ?? 0) > 1 }
 
     // MARK: - Chart
 

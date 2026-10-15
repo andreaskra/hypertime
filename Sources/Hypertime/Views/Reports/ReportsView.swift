@@ -49,6 +49,7 @@ struct ReportsView: View {
                     .keyboardShortcut(.leftArrow, modifiers: .command)
                 Button("Today") { viewModel.goToToday() }
                     .keyboardShortcut("t", modifiers: .command)
+                    .fixedSize()
                 Button { viewModel.go(1) } label: { Image(systemName: Tokens.Icons.navForward) }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
             }
@@ -63,6 +64,16 @@ struct ReportsView: View {
                 .layoutPriority(1)
 
             Spacer(minLength: Tokens.Space.s2)
+
+            HoverButton(help: viewModel.isSliding
+                        ? "Snap to calendar weeks and months"
+                        : "Slide the window a day at a time",
+                        tint: viewModel.isSliding ? Tokens.Palette.accent : nil) {
+                viewModel.isSliding.toggle()
+            } label: {
+                Image(systemName: viewModel.isSliding ? "arrow.left.and.right" : "calendar")
+                    .font(.system(size: 11, weight: .medium))
+            }
 
             Picker("", selection: $viewModel.presentation) {
                 Image(systemName: "chart.bar").tag(ReportsViewModel.Presentation.chart)
@@ -106,15 +117,36 @@ struct ReportsView: View {
                                  ? Tokens.Palette.textTertiary.color
                                  : Tokens.Palette.invalid.color)
             Spacer()
-            Text("Total")
-                .font(Tokens.Typography.caption)
-                .foregroundStyle(Tokens.Palette.textSecondary.color)
-            Text(viewModel.text(viewModel.report?.total ?? 0))
-                .font(Tokens.Typography.timeCell.font.weight(.semibold))
-                .foregroundStyle(Tokens.Palette.textPrimary.color)
+            if viewModel.showsAverages {
+                stat("Per day", viewModel.averagePerDay)
+                stat("Per tracked day", viewModel.averagePerTrackedDay,
+                     detail: "\(viewModel.trackedDays) of \(viewModel.calendarDays)")
+            }
+            stat("Total", viewModel.total, emphasised: true)
         }
         .padding(.horizontal, Tokens.Space.s4)
         .frame(height: 36)
+    }
+
+    /// A labelled number in the footer. The averages only make sense over more than one day.
+    private func stat(_ label: String, _ seconds: Seconds,
+                      detail: String? = nil, emphasised: Bool = false) -> some View {
+        HStack(spacing: Tokens.Space.s1) {
+            Text(label)
+                .font(Tokens.Typography.caption)
+                .foregroundStyle(Tokens.Palette.textSecondary.color)
+            Text(viewModel.text(seconds))
+                .font(emphasised
+                      ? Tokens.Typography.timeCell.font.weight(.semibold)
+                      : Tokens.Typography.timeCell.font)
+                .foregroundStyle(Tokens.Palette.textPrimary.color)
+            if let detail {
+                Text(detail)
+                    .font(Tokens.Typography.keyboardHint)
+                    .foregroundStyle(Tokens.Palette.textTertiary.color)
+            }
+        }
+        .padding(.leading, Tokens.Space.s3)
     }
 
     private var footerHint: String {

@@ -11,6 +11,9 @@ public enum Period: Hashable, Sendable {
     case week(isoYear: Int, isoWeek: Int)
     case month(year: Int, month: Int)
     case year(Int)
+    /// A window of `days` that is not pinned to the calendar — it steps a day at a time, so any
+    /// arbitrary seven-day (or thirty-day) stretch can be looked at.
+    case span(start: LocalDate, days: Int)
 
     public var kind: PeriodKind {
         switch self {
@@ -18,6 +21,22 @@ public enum Period: Hashable, Sendable {
         case .week: return .week
         case .month: return .month
         case .year: return .year
+        case .span(_, let days):
+            // A span behaves like the aligned period of the same width everywhere downstream.
+            if days <= 1 { return .day }
+            if days <= 7 { return .week }
+            if days <= 31 { return .month }
+            return .year
+        }
+    }
+
+    /// How many days the aligned version of a kind covers, for building a span of that width.
+    public static func spanLength(for kind: PeriodKind) -> Int {
+        switch kind {
+        case .day: return 1
+        case .week: return 7
+        case .month: return 30
+        case .year: return 365
         }
     }
 
@@ -73,6 +92,9 @@ public enum Period: Hashable, Sendable {
 
         case .year(let y):
             return LocalDate(year: y, month: 1, day: 1)...LocalDate(year: y, month: 12, day: 31)
+
+        case .span(let start, let days):
+            return start...start.adding(days: max(days, 1) - 1, calendar: calendar)
         }
     }
 
@@ -106,6 +128,10 @@ public enum Period: Hashable, Sendable {
 
         case .year(let y):
             return .year(y + delta)
+
+        case .span(let start, let days):
+            // One day per step: that is the point of a span.
+            return .span(start: start.adding(days: delta, calendar: calendar), days: days)
         }
     }
 
@@ -168,6 +194,15 @@ public enum Period: Hashable, Sendable {
 
         case .year(let y):
             return String(y)
+
+        case .span(_, let days):
+            let lo = range.lowerBound, hi = range.upperBound
+            let tail = lo.year == hi.year
+                ? Period.format(lo, lo.month == hi.month ? "d" : "d MMM", calendar: calendar, locale: locale)
+                    + "–" + Period.format(hi, "d MMM yyyy", calendar: calendar, locale: locale)
+                : Period.format(lo, "d MMM yyyy", calendar: calendar, locale: locale)
+                    + "–" + Period.format(hi, "d MMM yyyy", calendar: calendar, locale: locale)
+            return "\(days) days · \(tail)"
         }
     }
 
@@ -177,7 +212,22 @@ public enum Period: Hashable, Sendable {
         case .week(_, let w): return "W\(w)"
         case .month: return Period.format(range(calendar: calendar, weekStart: weekStart).lowerBound, "LLL yyyy", calendar: calendar, locale: locale)
         case .year(let y): return String(y)
+        case .span(_, let days): return "\(days)d"
         }
+    }
+
+    /// The months this period touches, for the year breakdown — a span can straddle any number.
+    public func months(calendar: Calendar, weekStart: Weekday) -> [Period] {
+        let range = range(calendar: calendar, weekStart: weekStart)
+        var result: [Period] = []
+        var year = range.lowerBound.year
+        var month = range.lowerBound.month
+        while year < range.upperBound.year || (year == range.upperBound.year && month <= range.upperBound.month) {
+            result.append(.month(year: year, month: month))
+            month += 1
+            if month > 12 { month = 1; year += 1 }
+        }
+        return result
     }
 
     // MARK: Helpers

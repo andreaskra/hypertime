@@ -166,6 +166,15 @@ enum ScreenshotRenderer {
                                                                               height: Tokens.Size.reportsDefault.height)),
                    in: url)
         }
+        reports.isSliding = true
+        reports.kind = .week
+        reports.go(-2)
+        render("chart-sliding-week",
+               AnyView(ReportsView(viewModel: reports, onExport: {}).frame(width: Tokens.Size.reportsDefault.width,
+                                                                          height: Tokens.Size.reportsDefault.height)),
+               in: url)
+        reports.isSliding = false
+        reports.goToToday()
         reports.presentation = .table
 
         for kind in [PeriodKind.day, .week, .month, .year] {

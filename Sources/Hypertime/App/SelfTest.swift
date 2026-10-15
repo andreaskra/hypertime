@@ -244,6 +244,36 @@ enum SelfTest {
         viewModel.projectTextChanged("")
         check("idle with no project named has nothing to start", !viewModel.canToggleTracking)
 
+        // Reports: the stats describe the range on screen, and a sliding window steps a day at
+        // a time so any arbitrary stretch can be reached.
+        let reports = ReportsViewModel(model: model)
+        reports.kind = .week
+        let alignedRange = reports.period.range(calendar: model.clock.calendar, weekStart: model.settings.weekStart)
+        check("a calendar week covers seven days", reports.calendarDays == 7, "\(reports.calendarDays)")
+        check("averages are offered for a range longer than a day", reports.showsAverages)
+        check("the average per day divides the total by the range",
+              reports.averagePerDay == reports.total / 7, "\(reports.averagePerDay)")
+        check("the average per tracked day only counts days with time",
+              reports.trackedDays <= reports.calendarDays,
+              "\(reports.trackedDays) of \(reports.calendarDays)")
+
+        reports.isSliding = true
+        let slid = reports.period.range(calendar: model.clock.calendar, weekStart: model.settings.weekStart)
+        check("sliding keeps the width", reports.calendarDays == 7)
+        reports.go(-1)
+        let stepped = reports.period.range(calendar: model.clock.calendar, weekStart: model.settings.weekStart)
+        check("…and steps one day, not one week",
+              stepped.lowerBound == model.day(slid.lowerBound, offsetBy: -1),
+              "\(slid.lowerBound) -> \(stepped.lowerBound)")
+        check("…so it leaves the calendar week behind",
+              stepped.lowerBound != alignedRange.lowerBound)
+        check("…and still reports seven days", reports.calendarDays == 7)
+        reports.isSliding = false
+        check("snapping back lands on a calendar week", reports.calendarDays == 7)
+
+        reports.kind = .day
+        check("a single day offers no averages", !reports.showsAverages)
+
         // Idle: the system reading must be a real number, and the engine must act on it.
         let idle = AppModel.systemIdleSeconds()
         check("system idle time is readable without a permission prompt", idle >= 0, "\(idle)s")

@@ -24,7 +24,7 @@ artboard-drift pass (the artboards were not part of the handoff zip).
 ## Commands
 ```bash
 swift build
-swift test                              # 134 tests, swift-testing (import Testing)
+swift test                              # 139 tests, swift-testing (import Testing)
 swift test --enable-code-coverage
 scripts/build-app.sh                    # -> dist/Hypertime.app (ad-hoc signed)
 scripts/run.sh                          # kills running instance, builds, opens

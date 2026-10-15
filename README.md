@@ -117,6 +117,10 @@ carry a dot in the calendar.
 
 - **Chart or table**, toggled in the toolbar. The chart stacks projects per day (or per month
   for a year); tick a project to hide it, click one to show it alone, "Select all" to reset.
+- **Totals and averages** for whatever range is on screen: per calendar day, per day actually
+  worked, and the total.
+- **Slide the window** with the toolbar's ⟷ toggle: the arrows then move one day at a time, so
+  you can look at any arbitrary seven- or thirty-day stretch rather than only calendar weeks.
 - **Day** lists every project with time that day; click a total to set it.
 - **Week** is a project × day grid; every cell is editable, and today's column is tinted.
 - **Month** shows one intensity square per day — click one to open that day.
@@ -164,7 +168,7 @@ Back it up by copying that file. If it ever becomes unreadable, Hypertime moves 
 ## Development
 
 ```bash
-swift test                  # 134 tests over HypertimeCore
+swift test                  # 139 tests over HypertimeCore
 scripts/run.sh              # build dist/Hypertime.app and launch it
 scripts/run.sh --seed-demo  # same, against a seeded demo database
 scripts/release.sh          # signed .app + .zip + .dmg in dist/

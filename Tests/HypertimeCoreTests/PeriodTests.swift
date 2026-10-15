@@ -220,3 +220,51 @@ struct MonthGridTests {
         #expect(Period.weekdayInitials(calendar: cal, weekStart: .monday, locale: locale).count == 7)
     }
 }
+
+@Suite("Period — sliding spans")
+struct SpanTests {
+
+    @Test("a span covers exactly its width and steps one day at a time")
+    func stepsByDay() {
+        let span = Period.span(start: d("2026-10-08"), days: 7)
+        #expect(span.range(calendar: cal, weekStart: .monday) == d("2026-10-08")...d("2026-10-14"))
+        #expect(span.days(calendar: cal, weekStart: .monday).count == 7)
+
+        let next = span.next(calendar: cal, weekStart: .monday)
+        #expect(next.range(calendar: cal, weekStart: .monday) == d("2026-10-09")...d("2026-10-15"))
+        let back = span.previous(calendar: cal, weekStart: .monday)
+        #expect(back.range(calendar: cal, weekStart: .monday) == d("2026-10-07")...d("2026-10-13"))
+    }
+
+    @Test("a span crosses month and year boundaries without snapping")
+    func crossesBoundaries() {
+        let span = Period.span(start: d("2026-12-29"), days: 7)
+        #expect(span.range(calendar: cal, weekStart: .monday) == d("2026-12-29")...d("2027-01-04"))
+        #expect(span.days(calendar: cal, weekStart: .monday).count == 7)
+    }
+
+    @Test("a span reports the kind of the aligned period it is as wide as")
+    func kindFollowsWidth() {
+        #expect(Period.span(start: d("2026-10-08"), days: 1).kind == .day)
+        #expect(Period.span(start: d("2026-10-08"), days: 7).kind == .week)
+        #expect(Period.span(start: d("2026-10-08"), days: 30).kind == .month)
+        #expect(Period.span(start: d("2026-10-08"), days: 365).kind == .year)
+        #expect(Period.spanLength(for: .week) == 7)
+    }
+
+    @Test("titles name the stretch, not a week number")
+    func titles() {
+        let locale = Locale(identifier: "en_GB")
+        #expect(Period.span(start: d("2026-10-08"), days: 7).title(calendar: cal, weekStart: .monday, locale: locale)
+                == "7 days · 8–14 Oct 2026")
+        #expect(Period.span(start: d("2026-12-29"), days: 7).title(calendar: cal, weekStart: .monday, locale: locale)
+                == "7 days · 29 Dec 2026–4 Jan 2027")
+    }
+
+    @Test("months touched by a period")
+    func months() {
+        #expect(Period.span(start: d("2026-12-29"), days: 7).months(calendar: cal, weekStart: .monday)
+                == [.month(year: 2026, month: 12), .month(year: 2027, month: 1)])
+        #expect(Period.year(2026).months(calendar: cal, weekStart: .monday).count == 12)
+    }
+}
