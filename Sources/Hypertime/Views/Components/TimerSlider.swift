@@ -5,18 +5,18 @@ import HypertimeCore
 /// The timer picker (T-10): one sweep from a minute to eight hours over `TimerLadder`'s slots,
 /// so the first hour — where nearly every timer lands — gets two thirds of the travel.
 ///
-/// The knob follows the pointer, the wheel nudges it a slot at a time, and a click takes
-/// whatever the readout says. There is no separate confirm step, so the one rule that has to
-/// hold is that the readout is always the truth: it names the pointer's slot while hovering,
-/// the scrolled slot after a scroll, and that is what a click sets.
+/// The knob moves when you ask it to and never otherwise: press the track and it goes there,
+/// drag it, or roll the wheel over it a slot at a time. Hovering changes nothing. Letting go
+/// sets the timer, so what the readout says when you release is what you get.
 struct TimerSlider: View {
     /// The timer already on the task, marked on the track so it can be found again.
     var current: Seconds?
     var onPick: (Seconds) -> Void
 
     @State private var index: Int
-    @State private var pointer: Double?
+    @State private var grabOffset: CGFloat = 0
     @State private var isHovering = false
+    @State private var isDragging = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// With nothing set yet the slider opens on the length people actually reach for.
@@ -28,14 +28,7 @@ struct TimerSlider: View {
         _index = State(initialValue: TimerLadder.index(nearest: current ?? Self.opening))
     }
 
-    /// The pointer wins while it is over the track; a scroll takes it back until the mouse
-    /// moves again. Everything on screen reads from here.
-    private var shownIndex: Int {
-        if let pointer { return TimerLadder.index(atFraction: pointer) }
-        return index
-    }
-
-    private var shownSeconds: Seconds { TimerLadder.seconds(at: shownIndex) }
+    private var shownSeconds: Seconds { TimerLadder.seconds(at: index) }
 
     private var motion: Animation? {
         Tokens.Motion.highlightMove.animation(reduceMotion: reduceMotion)
@@ -51,7 +44,7 @@ struct TimerSlider: View {
                 }
             }
             .frame(height: Tokens.Slider.bandHeight + Tokens.Slider.scaleHeight + Tokens.Space.s1)
-            Text("scroll to adjust · click to set")
+            Text("scroll or drag to adjust · click to set")
                 .font(Tokens.Typography.keyboardHint)
                 .foregroundStyle(Tokens.Palette.textTertiary.color)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -67,26 +60,38 @@ struct TimerSlider: View {
             .frame(maxWidth: .infinity, alignment: .center)
     }
 
-    // MARK: - Track
+    // MARK: - Geometry
 
     /// Knob centres are inset by its radius, so neither end of the sweep is clipped.
     private func knobX(width: CGFloat) -> CGFloat {
-        x(forFraction: TimerLadder.fraction(ofIndex: shownIndex), width: width)
+        x(forFraction: TimerLadder.fraction(ofIndex: index), width: width)
     }
 
     private func x(forFraction fraction: Double, width: CGFloat) -> CGFloat {
         Self.radius + CGFloat(fraction) * Self.span(width)
     }
 
-    /// The inverse: where the pointer is, in the same space. Without this the knob would lag
-    /// the cursor by up to a knob radius at the ends of the sweep, and the control's one rule
-    /// is that what is under the cursor is what you get.
+    /// The inverse: a position on the track, in the same inset space the knob is drawn in, so
+    /// pressing the track puts the knob exactly where the cursor is at every point of the sweep.
     static func fraction(forX x: CGFloat, width: CGFloat) -> Double {
         min(max(Double((x - radius) / span(width)), 0), 1)
     }
 
+    /// Whether a press landed on the knob rather than on bare track. A press on the knob
+    /// keeps its value: a knob is wider than a slot, so re-reading the value from the cursor
+    /// would quietly shift it by a slot or two on the way out.
+    static func isOnKnob(pressX: CGFloat, knobX: CGFloat) -> Bool {
+        abs(pressX - knobX) <= Tokens.Slider.knob / 2
+    }
+
     private static let radius = Tokens.Slider.knob / 2
     private static func span(_ width: CGFloat) -> CGFloat { max(width - 2 * radius, 1) }
+
+    private func move(to x: CGFloat, width: CGFloat) {
+        index = TimerLadder.index(atFraction: Self.fraction(forX: x + grabOffset, width: width))
+    }
+
+    // MARK: - Track
 
     private func track(width: CGFloat) -> some View {
         let knob = knobX(width: width)
@@ -109,24 +114,36 @@ struct TimerSlider: View {
                 .fill(Tokens.Palette.accent)
                 .overlay { Circle().strokeBorder(Tokens.Palette.onAccent.color, lineWidth: Tokens.Slider.knobRing) }
                 .frame(width: Tokens.Slider.knob, height: Tokens.Slider.knob)
-                .scaleEffect(isHovering ? Tokens.Slider.knobHoverScale : 1)
+                .scaleEffect(isHovering || isDragging ? Tokens.Slider.knobHoverScale : 1)
                 .offset(x: knob - Tokens.Slider.knob / 2)
         }
         .frame(height: Tokens.Slider.bandHeight)
-        .animation(motion, value: shownIndex)
+        // A dragged knob tracks the cursor with no easing; everything else glides.
+        .animation(isDragging ? nil : motion, value: index)
         .animation(motion, value: isHovering)
         .overlay {
             SliderInteraction(
-                onPointer: { x in
-                    pointer = x.map { Self.fraction(forX: $0, width: width) }
-                    isHovering = x != nil
+                onHover: { isHovering = $0 },
+                onPress: { x, keepsValue in
+                    isDragging = true
+                    let knob = knobX(width: width)
+                    if keepsValue || Self.isOnKnob(pressX: x, knobX: knob) {
+                        // Hold the length that is already chosen and let a drag move it from
+                        // there, rather than throwing it away for whatever is under the cursor.
+                        grabOffset = knob - x
+                    } else {
+                        grabOffset = 0
+                        move(to: x, width: width)
+                    }
+                },
+                onDrag: { x in move(to: x, width: width) },
+                onRelease: {
+                    isDragging = false
+                    onPick(shownSeconds)
                 },
                 onScroll: { steps in
-                    // A scroll takes the knob off the pointer: it is now the one being aimed.
-                    index = min(max(shownIndex + steps, 0), TimerLadder.slots.count - 1)
-                    pointer = nil
-                },
-                onCommit: { onPick(shownSeconds) }
+                    index = min(max(index + steps, 0), TimerLadder.slots.count - 1)
+                }
             )
         }
     }
@@ -158,31 +175,41 @@ struct TimerSlider: View {
 
 // MARK: - Pointer and wheel
 
-/// Pointer tracking, scroll wheel and click for the slider, in one AppKit view.
+/// Press, drag, release, wheel and hover for the slider, in one AppKit view.
 ///
-/// SwiftUI on macOS 15 has no scroll-wheel event, and its gestures cannot tell a hover from a
-/// drag — both of which this control is built on. Positions are reported as a fraction of the
-/// view's width so the SwiftUI side owns every pixel of the drawing.
+/// SwiftUI on macOS 15 has no scroll-wheel event, and a `DragGesture` cannot report a press
+/// before the finger has travelled — both of which this control is built on. Positions arrive
+/// as points inside the view so the SwiftUI side owns every pixel of the drawing.
 struct SliderInteraction: NSViewRepresentable {
-    /// The pointer's x inside the track, or nil when it leaves.
-    var onPointer: (CGFloat?) -> Void
+    var onHover: (Bool) -> Void
+    /// The press position, and whether it should keep the length already chosen — true for a
+    /// click that follows a scroll with no mouse movement in between.
+    var onPress: (CGFloat, Bool) -> Void
+    var onDrag: (CGFloat) -> Void
+    var onRelease: () -> Void
     var onScroll: (Int) -> Void
-    var onCommit: () -> Void
 
     func makeNSView(context: Context) -> TrackingView { TrackingView() }
 
     func updateNSView(_ view: TrackingView, context: Context) {
-        view.onPointer = onPointer
+        view.onHover = onHover
+        view.onPress = onPress
+        view.onDrag = onDrag
+        view.onRelease = onRelease
         view.onScroll = onScroll
-        view.onCommit = onCommit
     }
 
     final class TrackingView: NSView {
-        var onPointer: ((CGFloat?) -> Void)?
+        var onHover: ((Bool) -> Void)?
+        var onPress: ((CGFloat, Bool) -> Void)?
+        var onDrag: ((CGFloat) -> Void)?
+        var onRelease: (() -> Void)?
         var onScroll: ((Int) -> Void)?
-        var onCommit: (() -> Void)?
 
         private var isDragging = false
+        /// Set by the wheel and cleared by the first real mouse movement: a click straight
+        /// after a scroll means "that one", while moving the cursor first means "that spot".
+        private var keepsValue = false
         private var wheelTravel: CGFloat = 0
         /// Trackpad deltas arrive in points; this many of them is one slot.
         private let travelPerStep: CGFloat = 6
@@ -200,24 +227,32 @@ struct SliderInteraction: NSViewRepresentable {
             convert(event.locationInWindow, from: nil).x
         }
 
-        override func mouseEntered(with event: NSEvent) { onPointer?(pointerX(event)) }
-        override func mouseMoved(with event: NSEvent) { onPointer?(pointerX(event)) }
-        override func mouseDragged(with event: NSEvent) { onPointer?(pointerX(event)) }
+        /// Hovering is a cursor state, nothing more: the knob stays where it was put. The
+        /// only thing movement does is retire a scroll's claim on the next click.
+        override func mouseEntered(with event: NSEvent) { onHover?(true) }
+
+        override func mouseMoved(with event: NSEvent) { keepsValue = false }
 
         override func mouseExited(with event: NSEvent) {
             // A drag that wanders off the track is still a drag.
             guard !isDragging else { return }
-            onPointer?(nil)
+            onHover?(false)
         }
 
         override func mouseDown(with event: NSEvent) {
             isDragging = true
-            onPointer?(pointerX(event))
+            onPress?(pointerX(event), keepsValue)
+            keepsValue = false
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard isDragging else { return }
+            onDrag?(pointerX(event))
         }
 
         override func mouseUp(with event: NSEvent) {
             isDragging = false
-            onCommit?()
+            onRelease?()
         }
 
         override func scrollWheel(with event: NSEvent) {
@@ -228,6 +263,7 @@ struct SliderInteraction: NSViewRepresentable {
             let delta = abs(vertical) >= abs(horizontal) ? vertical : horizontal
             guard delta != 0 else { return }
 
+            keepsValue = true
             guard event.hasPreciseScrollingDeltas else {
                 onScroll?(delta > 0 ? 1 : -1)
                 return

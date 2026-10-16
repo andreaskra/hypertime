@@ -752,33 +752,46 @@ enum SelfTest {
     }
 
     /// The timer slider, driven through the real AppKit view the way a mouse drives it.
-    /// The maths has its own tests in core; what is checked here is the plumbing — the pointer
-    /// conversion, the wheel's direction and the click — which is where this kind of control
+    /// The ladder has its own tests in core; what is checked here is the plumbing — hovering,
+    /// the press, the wheel's direction and the release — which is where this kind of control
     /// actually breaks.
     private static func checkTimerSlider() {
-        let width: CGFloat = 186
-        let view = SliderInteraction.TrackingView(frame: NSRect(x: 0, y: 0, width: width, height: 22))
-        var pointer: CGFloat?
+        let width = Tokens.Size.taskMenuWidth - 2 * Tokens.Space.s2
+        let middle = NSPoint(x: width / 2, y: Tokens.Slider.bandHeight / 2)
+        let view = SliderInteraction.TrackingView(
+            frame: NSRect(x: 0, y: 0, width: width, height: Tokens.Slider.bandHeight))
+        var pressed: CGFloat?
+        var dragged: CGFloat?
+        var releases = 0
         var steps = 0
-        var commits = 0
-        view.onPointer = { pointer = $0 }
+        var hovering = false
+        view.onHover = { hovering = $0 }
+        view.onPress = { x, _ in pressed = x }
+        view.onDrag = { dragged = $0 }
+        view.onRelease = { releases += 1 }
         view.onScroll = { steps += $0 }
-        view.onCommit = { commits += 1 }
 
-        func move(to x: CGFloat) {
-            view.mouseMoved(with: mouseEvent(.mouseMoved, at: NSPoint(x: x, y: 11)))
-        }
+        // Reported: the knob slid under the pointer. Hovering is a cursor state, nothing more.
+        view.mouseEntered(with: mouseEvent(.mouseMoved, at: middle))
+        view.mouseMoved(with: mouseEvent(.mouseMoved, at: NSPoint(x: width * 0.8, y: middle.y)))
+        check("hovering the slider moves nothing", pressed == nil && dragged == nil && releases == 0)
+        check("…though the knob lights up under the cursor", hovering)
+        view.mouseExited(with: mouseEvent(.mouseMoved, at: NSPoint(x: -4, y: middle.y)))
+        check("…and settles again when the cursor leaves", !hovering)
+
+        /// One click on the track, and the length it lands on.
         func slot(at x: CGFloat) -> Seconds {
-            move(to: x)
-            guard let pointer else { return -1 }
+            pressed = nil
+            view.mouseDown(with: mouseEvent(.leftMouseDown, at: NSPoint(x: x, y: middle.y)))
+            view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: x, y: middle.y)))
+            guard let pressed else { return -1 }
             return TimerLadder.seconds(at: TimerLadder.index(
-                atFraction: TimerSlider.fraction(forX: pointer, width: width)))
+                atFraction: TimerSlider.fraction(forX: pressed, width: width)))
         }
 
         // The knob lands under the cursor at both ends, not a knob radius short of them.
         check("the slider's left end is one minute", slot(at: 0) == 60, "\(slot(at: 0)) s")
         check("…and its right end is eight hours", slot(at: width) == 8 * 3600, "\(slot(at: width)) s")
-        // Two thirds of the travel is spent inside the first hour (T-10).
         let radius = Tokens.Slider.knob / 2
         let step = (width - Tokens.Slider.knob) / CGFloat(TimerLadder.slots.count - 1)
         let hourFraction = TimerLadder.fraction(ofIndex: TimerLadder.index(nearest: 3600))
@@ -797,17 +810,42 @@ enum SelfTest {
               slot(at: longEnd + step) - slot(at: longEnd) == 3600,
               "\(slot(at: longEnd)) s then \(slot(at: longEnd + step)) s")
 
-        move(to: width / 2)
-        let middle = pointer
-        view.mouseExited(with: mouseEvent(.mouseMoved, at: NSPoint(x: -4, y: 11)))
-        check("the knob goes back to the set value when the pointer leaves", pointer == nil)
+        // A knob is wider than a slot, so the click that confirms a scrolled length has to
+        // keep it rather than re-read it from the cursor.
+        let knobX = radius + 10 * step
+        check("a press on the knob keeps its value",
+              TimerSlider.isOnKnob(pressX: knobX + radius - 1, knobX: knobX))
+        check("…while a press on bare track takes the cursor's",
+              !TimerSlider.isOnKnob(pressX: knobX + Tokens.Slider.knob, knobX: knobX))
 
-        // A drag that wanders off the track is still a drag.
-        view.mouseDown(with: mouseEvent(.leftMouseDown, at: NSPoint(x: width / 2, y: 11)))
-        view.mouseExited(with: mouseEvent(.mouseMoved, at: NSPoint(x: -4, y: 11)))
-        check("…but a drag off the edge keeps hold of it", pointer == middle)
-        view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: width / 2, y: 11)))
-        check("a click sets the timer", commits == 1)
+        // Reported the other way round at first: a click had to be able to accept what the
+        // wheel had just chosen, wherever the cursor happened to be sitting.
+        var keptValue: Bool?
+        view.onPress = { _, keeps in keptValue = keeps }
+        if let up = wheelEvent(1) { view.scrollWheel(with: up) }
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: NSPoint(x: 4, y: middle.y)))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: 4, y: middle.y)))
+        check("a click straight after a scroll takes the scrolled length", keptValue == true)
+        if let up = wheelEvent(1) { view.scrollWheel(with: up) }
+        view.mouseMoved(with: mouseEvent(.mouseMoved, at: NSPoint(x: width * 0.3, y: middle.y)))
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: NSPoint(x: width * 0.3, y: middle.y)))
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: width * 0.3, y: middle.y)))
+        check("…but moving the cursor first means the spot you clicked", keptValue == false)
+        view.onPress = { x, _ in pressed = x }
+        steps = 0
+        releases = 0
+
+        releases = 0
+        dragged = nil
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: middle))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: NSPoint(x: width * 0.9, y: middle.y)))
+        check("a drag moves the knob", dragged != nil)
+        check("…without setting anything until it is let go", releases == 0)
+        view.mouseExited(with: mouseEvent(.mouseMoved, at: NSPoint(x: -4, y: middle.y)))
+        view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: NSPoint(x: width * 0.95, y: middle.y)))
+        check("…and a drag off the edge is still a drag", dragged == width * 0.95)
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: width * 0.95, y: middle.y)))
+        check("releasing sets the timer", releases == 1)
 
         if let up = wheelEvent(1), let down = wheelEvent(-1) {
             view.scrollWheel(with: up)
@@ -815,6 +853,7 @@ enum SelfTest {
             view.scrollWheel(with: down)
             view.scrollWheel(with: down)
             check("…and shortens it scrolling down", steps == -1, "\(steps)")
+            check("…without setting anything on its own", releases == 1)
         } else {
             note("scroll wheel not measured: synthetic wheel events unavailable")
         }
