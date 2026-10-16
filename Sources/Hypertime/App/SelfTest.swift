@@ -316,12 +316,21 @@ enum SelfTest {
         check("…and resumes from where it was", viewModel.isRunning(task))
         viewModel.stopTask(task)
 
-        viewModel.setTimer(task, text: "25m")
-        check("a timer can be set from the menu",
+        viewModel.setTimer(task, seconds: 1500)
+        check("a timer can be set from the slider",
               model.task(task.id)?.timerSeconds == 1500, "\(model.task(task.id)?.timerSeconds ?? -1)")
         check("…and shows as remaining", viewModel.remainingText(for: model.task(task.id)!) != nil)
+        // A timer is a nudge: taking it away must not touch a second of tracked time (T-05).
+        let trackedBeforeClear = model.engine.liveTaskSeconds(task.id)
+        let projectBeforeClear = (try? model.store.seconds(project: task.projectID, day: model.today)) ?? -1
         viewModel.clearTimer(model.task(task.id)!)
         check("…and can be cleared", model.task(task.id)?.timerSeconds == nil)
+        check("…without changing the time the task has tracked",
+              model.engine.liveTaskSeconds(task.id) == trackedBeforeClear,
+              "\(trackedBeforeClear) s before, \(model.engine.liveTaskSeconds(task.id)) s after")
+        check("…or the project's day total",
+              (try? model.store.seconds(project: task.projectID, day: model.today)) == projectBeforeClear)
+        checkTimerSlider()
 
         viewModel.finishTask(task)
         check("finishing animates before it commits", viewModel.completingTaskID == task.id)
@@ -740,6 +749,86 @@ enum SelfTest {
 
     private static func note(_ text: String) {
         FileHandle.standardError.write(Data("--   \(text)\n".utf8))
+    }
+
+    /// The timer slider, driven through the real AppKit view the way a mouse drives it.
+    /// The maths has its own tests in core; what is checked here is the plumbing — the pointer
+    /// conversion, the wheel's direction and the click — which is where this kind of control
+    /// actually breaks.
+    private static func checkTimerSlider() {
+        let width: CGFloat = 186
+        let view = SliderInteraction.TrackingView(frame: NSRect(x: 0, y: 0, width: width, height: 22))
+        var pointer: CGFloat?
+        var steps = 0
+        var commits = 0
+        view.onPointer = { pointer = $0 }
+        view.onScroll = { steps += $0 }
+        view.onCommit = { commits += 1 }
+
+        func move(to x: CGFloat) {
+            view.mouseMoved(with: mouseEvent(.mouseMoved, at: NSPoint(x: x, y: 11)))
+        }
+        func slot(at x: CGFloat) -> Seconds {
+            move(to: x)
+            guard let pointer else { return -1 }
+            return TimerLadder.seconds(at: TimerLadder.index(
+                atFraction: TimerSlider.fraction(forX: pointer, width: width)))
+        }
+
+        // The knob lands under the cursor at both ends, not a knob radius short of them.
+        check("the slider's left end is one minute", slot(at: 0) == 60, "\(slot(at: 0)) s")
+        check("…and its right end is eight hours", slot(at: width) == 8 * 3600, "\(slot(at: width)) s")
+        // Two thirds of the travel is spent inside the first hour (T-10).
+        let radius = Tokens.Slider.knob / 2
+        let step = (width - Tokens.Slider.knob) / CGFloat(TimerLadder.slots.count - 1)
+        let hourFraction = TimerLadder.fraction(ofIndex: TimerLadder.index(nearest: 3600))
+        check("…and the hour lands where the scale says it does",
+              slot(at: radius + CGFloat(hourFraction) * (width - Tokens.Slider.knob)) == 3600)
+        check("…roughly two thirds along", hourFraction > 0.6 && hourFraction < 0.72,
+              String(format: "%.2f", hourFraction))
+        // The whole point of the ladder: the same scrap of travel is worth a minute down at
+        // the short end and an hour up at the top.
+        let shortEnd = radius + 3 * step
+        let longEnd = radius + CGFloat(TimerLadder.slots.count - 3) * step
+        check("…where one slot of travel is a minute at the short end",
+              slot(at: shortEnd + step) - slot(at: shortEnd) == 60,
+              "\(slot(at: shortEnd)) s then \(slot(at: shortEnd + step)) s")
+        check("…and an hour at the long end",
+              slot(at: longEnd + step) - slot(at: longEnd) == 3600,
+              "\(slot(at: longEnd)) s then \(slot(at: longEnd + step)) s")
+
+        move(to: width / 2)
+        let middle = pointer
+        view.mouseExited(with: mouseEvent(.mouseMoved, at: NSPoint(x: -4, y: 11)))
+        check("the knob goes back to the set value when the pointer leaves", pointer == nil)
+
+        // A drag that wanders off the track is still a drag.
+        view.mouseDown(with: mouseEvent(.leftMouseDown, at: NSPoint(x: width / 2, y: 11)))
+        view.mouseExited(with: mouseEvent(.mouseMoved, at: NSPoint(x: -4, y: 11)))
+        check("…but a drag off the edge keeps hold of it", pointer == middle)
+        view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: width / 2, y: 11)))
+        check("a click sets the timer", commits == 1)
+
+        if let up = wheelEvent(1), let down = wheelEvent(-1) {
+            view.scrollWheel(with: up)
+            check("the wheel lengthens the timer scrolling up", steps == 1, "\(steps)")
+            view.scrollWheel(with: down)
+            view.scrollWheel(with: down)
+            check("…and shortens it scrolling down", steps == -1, "\(steps)")
+        } else {
+            note("scroll wheel not measured: synthetic wheel events unavailable")
+        }
+    }
+
+    private static func mouseEvent(_ type: NSEvent.EventType, at point: NSPoint) -> NSEvent {
+        NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                           windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+    }
+
+    private static func wheelEvent(_ lines: Int32) -> NSEvent? {
+        guard let event = CGEvent(scrollWheelEvent2Source: nil, units: .line,
+                                  wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0) else { return nil }
+        return NSEvent(cgEvent: event)
     }
 
     private static func check(_ name: String, _ condition: Bool, _ detail: String = "") {

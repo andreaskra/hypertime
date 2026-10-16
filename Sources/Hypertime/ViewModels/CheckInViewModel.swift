@@ -357,10 +357,17 @@ final class CheckInViewModel {
 
     func setTimer(_ task: TaskItem, text: String) {
         guard let parsed = try? model.parser.parseAbsolute(text), parsed > 0 else { return }
-        try? model.store.setTaskTimer(id: task.id, seconds: parsed)
+        setTimer(task, seconds: parsed)
+    }
+
+    func setTimer(_ task: TaskItem, seconds: Seconds) {
+        guard seconds > 0 else { return }
+        try? model.store.setTaskTimer(id: task.id, seconds: seconds)
         refreshAfterTaskChange()
     }
 
+    /// A timer is a nudge, nothing more: taking it away leaves every second the task has
+    /// tracked exactly where it was.
     func clearTimer(_ task: TaskItem) {
         try? model.store.setTaskTimer(id: task.id, seconds: nil)
         refreshAfterTaskChange()

@@ -30,7 +30,7 @@ struct OverflowMenuView: View {
             }
         }
         .padding(Tokens.Space.s2)
-        .frame(width: 190)
+        .frame(width: Tokens.Size.overflowMenuWidth)
     }
 }
 

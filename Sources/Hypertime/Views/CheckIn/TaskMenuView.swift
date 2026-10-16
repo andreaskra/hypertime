@@ -4,16 +4,23 @@ import HypertimeCore
 /// The ⋯ menu for a task, in the app's own styling rather than a system menu. Pages rather than
 /// submenus: one popover that walks in and back out again.
 struct TaskMenuView: View {
+    enum Page {
+        case root, timer, move, rename
+    }
+
     @Bindable var viewModel: CheckInViewModel
     let task: TaskItem
     var onClose: () -> Void
 
-    private enum Page {
-        case root, timer, move, rename
-    }
-
-    @State private var page: Page = .root
+    @State private var page: Page
     @State private var title: String = ""
+
+    init(viewModel: CheckInViewModel, task: TaskItem, startOn: Page = .root, onClose: @escaping () -> Void) {
+        self.viewModel = viewModel
+        self.task = task
+        self.onClose = onClose
+        _page = State(initialValue: startOn)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Tokens.Space.s1) {
@@ -25,7 +32,7 @@ struct TaskMenuView: View {
             }
         }
         .padding(Tokens.Space.s2)
-        .frame(width: 210)
+        .frame(width: Tokens.Size.taskMenuWidth)
         .onAppear { title = task.title }
     }
 
@@ -34,8 +41,9 @@ struct TaskMenuView: View {
     private var root: some View {
         VStack(alignment: .leading, spacing: Tokens.Space.s1) {
             MenuRow(title: "Rename…", symbol: "pencil") { page = .rename }
-            MenuRow(title: task.timerSeconds == nil ? "Set a timer…" : "Change the timer…",
-                    symbol: "timer") { page = .timer }
+            MenuRow(title: task.timerSeconds == nil ? "Set a timer…" : "Change timer…",
+                    symbol: "timer",
+                    hint: task.timerSeconds.map { TimerLadder.label($0) }) { page = .timer }
             MenuRow(title: "Move to project…", symbol: "folder") { page = .move }
             Hairline().padding(.vertical, 2)
             MenuRow(title: "Delete", symbol: "trash", isDestructive: true,
@@ -47,18 +55,18 @@ struct TaskMenuView: View {
         }
     }
 
+    /// A slider rather than a list of four lengths: the four were a guess at which ones
+    /// matter, and anything else meant giving up on the menu entirely.
     private var timer: some View {
-        VStack(alignment: .leading, spacing: Tokens.Space.s1) {
+        VStack(alignment: .leading, spacing: Tokens.Space.s2) {
             MenuHeader(title: "Timer") { page = .root }
-            ForEach([15, 25, 45, 60], id: \.self) { minutes in
-                MenuRow(title: "\(minutes) minutes", symbol: "timer") {
-                    viewModel.setTimer(task, text: "\(minutes)m")
-                    onClose()
-                }
+            TimerSlider(current: task.timerSeconds) { seconds in
+                viewModel.setTimer(task, seconds: seconds)
+                onClose()
             }
             if task.timerSeconds != nil {
-                Hairline().padding(.vertical, 2)
-                MenuRow(title: "Clear the timer", symbol: "xmark") {
+                Hairline()
+                MenuRow(title: "Clear the timer", symbol: "xmark", hint: "time stays") {
                     viewModel.clearTimer(task)
                     onClose()
                 }
@@ -169,6 +177,8 @@ private struct MenuRow: View {
                     Text(hint)
                         .font(Tokens.Typography.keyboardHint)
                         .foregroundStyle(Tokens.Palette.textTertiary.color)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
             }
             .foregroundStyle(isDestructive

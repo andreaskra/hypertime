@@ -92,6 +92,9 @@ enum ScreenshotRenderer {
             if let a {
                 render("task-menu", AnyView(TaskMenuView(viewModel: checkIn, task: a, onClose: {})), in: url,
                        backdrop: Tokens.Materials.popover)
+                render("task-timer", AnyView(TaskMenuView(viewModel: checkIn, task: a, startOn: .timer,
+                                                          onClose: {})), in: url,
+                       backdrop: Tokens.Materials.popover)
                 checkIn.expiredTaskID = a.id
                 render("popup-task-timer", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
                 checkIn.expiredTaskID = nil

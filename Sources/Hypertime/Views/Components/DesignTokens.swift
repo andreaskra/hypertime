@@ -196,6 +196,10 @@ enum Tokens {
         static let indicatorDot: CGFloat = 6
         static let iconButton: CGFloat = 20
         static let pausePopoverWidth: CGFloat = 240
+        static let overflowMenuWidth: CGFloat = 190
+        /// Wider than the overflow menu: its rows carry a trailing hint, and the timer slider
+        /// wants every point it can get.
+        static let taskMenuWidth: CGFloat = 230
         static let autoHideDrainHeight: CGFloat = 2
     }
 
@@ -264,6 +268,20 @@ enum Tokens {
         static let discard: CGFloat = 12
         static let secondary: CGFloat = 13
         static let primary: CGFloat = 14
+    }
+
+    /// The timer slider (T-10). Its own group: it replaced the handoff's list of fixed
+    /// durations, so none of these numbers come from `tokens.json`.
+    enum Slider {
+        static let bandHeight: CGFloat = 22
+        static let scaleHeight: CGFloat = 12
+        static let trackHeight: CGFloat = 4
+        static let knob: CGFloat = 14
+        static let knobRing: CGFloat = 1.5
+        static let knobHoverScale: CGFloat = 1.15
+        /// Ticks for the hour and for the timer already set.
+        static let markerHeight: CGFloat = 9
+        static let markerWidth: CGFloat = 1.5
     }
 
     /// The confirm bounce: the amount label pulls back, overshoots and settles.
