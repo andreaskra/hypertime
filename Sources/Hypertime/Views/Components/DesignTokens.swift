@@ -254,8 +254,8 @@ enum Tokens {
         static let autoHide = MotionToken(ms: 20000, curve: .linear(duration: 20))
         /// Tasks: a rewarding pop in, a strike-through slide out, a shrink on delete.
         static let taskAppear = MotionToken(ms: 220, curve: .spring(response: 0.26, dampingFraction: 0.62))
-        static let taskComplete = MotionToken(ms: 400, curve: .easeIn(duration: 0.4))
-        static let taskDelete = MotionToken(ms: 220, curve: .easeIn(duration: 0.22))
+        static let taskComplete = MotionToken(ms: 280, curve: .easeIn(duration: 0.28))
+        static let taskDelete = MotionToken(ms: 180, curve: .easeIn(duration: 0.18))
         static let reduceMotionFallback = MotionToken(ms: 120, curve: .linear(duration: 0.12))
     }
 

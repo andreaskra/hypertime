@@ -78,6 +78,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     var onPauseRequested: ((NSView) -> Void)?
     var onMenuRequested: ((NSView) -> Void)?
     var onDayPickerRequested: ((NSView) -> Void)?
+    var onTaskMenuRequested: ((TaskItem, NSRect, NSView) -> Void)?
 
     var isVisible: Bool { panel.isVisible }
     var isKey: Bool { panel.isKeyWindow }
@@ -151,6 +152,15 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
             guard let self else { return }
             self.onDayPickerRequested?(self.hoverView)
         }
+        viewModel.onTaskMenuRequested = { [weak self] task, anchor in
+            guard let self else { return }
+            // SwiftUI measures y downwards from the panel's top; AppKit counts up from the bottom.
+            let flipped = NSRect(x: anchor.minX,
+                                 y: self.hoverView.bounds.maxY - anchor.maxY,
+                                 width: max(anchor.width, 1),
+                                 height: max(anchor.height, 1))
+            self.onTaskMenuRequested?(task, flipped, self.hoverView)
+        }
         presentation.onHeightRequest = { [weak self] height in self?.layoutPanel(height: height) }
     }
 
@@ -199,6 +209,9 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     /// Animated dismiss; `orderOut` happens when the animation is done. Never changes focus.
     func hide() {
         focusedShownAt = nil
+        // A finish or a delete that is still playing out must land, not evaporate with the panel.
+        viewModel.commitFinish()
+        viewModel.commitDelete()
         cancelAutoHide()
         guard panel.isVisible else { return }
         withAnimation(Tokens.Motion.popupDismiss.animation(reduceMotion: reduceMotion)) {

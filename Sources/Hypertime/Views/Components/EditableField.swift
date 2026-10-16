@@ -80,16 +80,28 @@ struct EditableField: NSViewRepresentable {
             )
         }
 
-        guard let window = field.window, window.isKeyWindow else { return }
-        let isFirstResponder = window.firstResponder === field.currentEditor() && field.currentEditor() != nil
-        if isFocused, !isFirstResponder {
-            // Defer: SwiftUI may still be in the middle of a layout pass.
-            DispatchQueue.main.async {
-                guard let window = field.window, window.isKeyWindow,
-                      window.firstResponder !== field.currentEditor() else { return }
-                window.makeFirstResponder(field)
-                if selectAllOnFocus { field.currentEditor()?.selectAll(nil) }
-            }
+        // A field created this frame is not in a window yet, and no further SwiftUI update is
+        // coming to try again — so keep asking briefly rather than waiting for a second click.
+        if isFocused, !context.coordinator.isChasingFocus {
+            context.coordinator.isChasingFocus = true
+            takeFocus(field, context.coordinator, attempt: 0)
+        }
+    }
+
+    private func takeFocus(_ field: NSTextField, _ coordinator: Coordinator, attempt: Int) {
+        guard attempt < 10 else {
+            coordinator.isChasingFocus = false
+            return
+        }
+        if let window = field.window, window.isKeyWindow {
+            coordinator.isChasingFocus = false
+            guard window.firstResponder !== field.currentEditor() else { return }
+            window.makeFirstResponder(field)
+            if selectAllOnFocus { field.currentEditor()?.selectAll(nil) }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            takeFocus(field, coordinator, attempt: attempt + 1)
         }
     }
 
@@ -99,6 +111,8 @@ struct EditableField: NSViewRepresentable {
         var parent: EditableField
         var isTyping = false
         var lastRevision = 0
+        /// One focus chase at a time, or every SwiftUI update would start another.
+        var isChasingFocus = false
 
         init(parent: EditableField) { self.parent = parent }
 

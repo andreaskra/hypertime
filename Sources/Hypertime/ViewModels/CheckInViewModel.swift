@@ -74,6 +74,8 @@ final class CheckInViewModel {
     var tasks: [TaskItem] = []
     var isAddingTask = false
     var newTaskTitle = ""
+    /// Why a pending task could not be filed yet, shown under the row.
+    var newTaskError: String?
     /// Rows mid-animation: completing slides out, deleting shrinks away.
     var completingTaskID: UUID?
     var deletingTaskID: UUID?
@@ -116,6 +118,8 @@ final class CheckInViewModel {
     var onPauseRequested: (() -> Void)?
     var onMenuRequested: (() -> Void)?
     var onDayPickerRequested: (() -> Void)?
+    /// A task's ⋯ menu, with the button's frame in panel coordinates to hang it off.
+    var onTaskMenuRequested: ((TaskItem, CGRect) -> Void)?
     /// The panel owns animation timing; it calls `commitFinish`/`commitDelete` when the row has
     /// finished playing out.
     var onTaskCompleting: (() -> Void)?
@@ -251,12 +255,28 @@ final class CheckInViewModel {
     /// Clicking a task starts it; clicking the running one pauses it (T-03).
     func toggleTask(_ task: TaskItem) {
         if isRunning(task) {
-            model.engine.stopTask()
+            stopTask(task)
         } else {
-            model.engine.startTask(task)
+            startTask(task)
         }
+    }
+
+    func startTask(_ task: TaskItem) {
+        model.engine.startTask(task)
         refreshAfterTaskChange()
     }
+
+    func stopTask(_ task: TaskItem) {
+        guard isRunning(task) else { return }
+        model.engine.stopTask()
+        refreshAfterTaskChange()
+    }
+
+    /// A task that has run before resumes rather than starts.
+    func hasStarted(_ task: TaskItem) -> Bool { model.engine.liveTaskSeconds(task.id) > 0 }
+
+    /// Anything that is not running can be thrown away.
+    func canDelete(_ task: TaskItem) -> Bool { !isRunning(task) }
 
     func elapsedText(for task: TaskItem) -> String {
         model.display(model.engine.liveTaskSeconds(task.id))
@@ -273,24 +293,36 @@ final class CheckInViewModel {
     func addTask() {
         isAddingTask = true
         newTaskTitle = ""
+        newTaskError = nil
     }
 
-    func commitNewTask() {
+    /// ↩ on a pending task always keeps it. A title that cannot be filed yet holds the row open
+    /// with the text still in it — losing what somebody typed is never the right answer.
+    @discardableResult
+    func commitNewTask() -> Bool {
         let title = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else {
             isAddingTask = false
-            return
+            newTaskError = nil
+            return false
         }
         // The + button opens the task under the project the popup is showing.
-        model.createTask(title: title, projectName: effectiveName)
+        guard model.createTask(title: title, projectName: effectiveName) != nil else {
+            newTaskError = "Name a project first"
+            focus = .project
+            return false
+        }
         newTaskTitle = ""
+        newTaskError = nil
         isAddingTask = false
         refreshAfterTaskChange()
+        return true
     }
 
     func cancelNewTask() {
         isAddingTask = false
         newTaskTitle = ""
+        newTaskError = nil
     }
 
     func finishTask(_ task: TaskItem) {
@@ -594,6 +626,10 @@ final class CheckInViewModel {
 
     func requestDayPicker() {
         onDayPickerRequested?()
+    }
+
+    func requestTaskMenu(_ task: TaskItem, anchor: CGRect) {
+        onTaskMenuRequested?(task, anchor)
     }
 
     /// The header control: pause while tracking, resume while paused, start when idle. Idle is

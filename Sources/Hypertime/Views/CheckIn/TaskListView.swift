@@ -63,7 +63,7 @@ private struct TaskRowView: View {
     let task: TaskItem
 
     @State private var isHovering = false
-    @State private var hasAppeared = false
+    @State private var menuAnchor: CGRect = .zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isRunning: Bool { viewModel.isRunning(task) }
@@ -72,36 +72,21 @@ private struct TaskRowView: View {
 
     var body: some View {
         HStack(spacing: Tokens.Space.s2) {
-            Button { viewModel.finishTask(task) } label: {
-                Image(systemName: isCompleting ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 13))
-                    .foregroundStyle(isCompleting ? Tokens.Palette.success.color
-                                     : (isRunning ? Tokens.Palette.accent : Tokens.Palette.textTertiary.color))
-            }
-            .buttonStyle(.plain)
-            .help("Finish \(task.title)")
+            Text(task.title)
+                .font(isRunning ? Tokens.Typography.listRowCurrent : Tokens.Typography.listRow)
+                .foregroundStyle(isCompleting
+                                 ? Tokens.Palette.textTertiary.color
+                                 : Tokens.Palette.textPrimary.color)
+                .strikethrough(isCompleting, color: Tokens.Palette.textTertiary.color)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            Button { viewModel.toggleTask(task) } label: {
-                HStack(spacing: Tokens.Space.s2) {
-                    Text(task.title)
-                        .font(isRunning ? Tokens.Typography.listRowCurrent : Tokens.Typography.listRow)
-                        .foregroundStyle(isCompleting
-                                         ? Tokens.Palette.textTertiary.color
-                                         : Tokens.Palette.textPrimary.color)
-                        .strikethrough(isCompleting, color: Tokens.Palette.textTertiary.color)
-                        .lineLimit(1)
-                    Spacer(minLength: Tokens.Space.s2)
-                    trailing
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(isRunning ? "Pause \(task.title)" : "Start \(task.title)")
-
-            TaskMenu(viewModel: viewModel, task: task)
-                .opacity(isHovering || isRunning ? 1 : 0.35)
+            Spacer(minLength: Tokens.Space.s2)
+            trailing
+            actions
         }
-        .padding(.horizontal, Tokens.Space.rowInset)
+        .padding(.leading, Tokens.Space.rowInset)
+        .padding(.trailing, Tokens.Space.s1)
         .frame(height: Tokens.Size.listRowHeight)
         .background {
             RoundedRectangle(cornerRadius: Tokens.Radius.row, style: .continuous)
@@ -110,25 +95,16 @@ private struct TaskRowView: View {
         }
         .onHover { isHovering = $0 }
         // Appear with a pop; complete by sliding off to the left; delete by shrinking away.
-        .scaleEffect(scale, anchor: .leading)
+        .scaleEffect(isDeleting ? 0.6 : 1, anchor: .leading)
         .offset(x: isCompleting ? -Tokens.Size.popupWidth : 0)
         .opacity(isDeleting ? 0 : (isCompleting ? 0.4 : 1))
         .frame(height: isDeleting ? 0 : Tokens.Size.listRowHeight)
         .clipped()
-        .onAppear {
-            guard !hasAppeared else { return }
-            hasAppeared = true
-            withAnimation(Tokens.Motion.taskAppear.animation(reduceMotion: reduceMotion)) { }
-        }
         .animation(Tokens.Motion.taskComplete.animation(reduceMotion: reduceMotion), value: isCompleting)
         .animation(Tokens.Motion.taskDelete.animation(reduceMotion: reduceMotion), value: isDeleting)
     }
 
-    private var scale: CGFloat {
-        if isDeleting { return 0.6 }
-        return 1
-    }
-
+    /// Time sits in secondary ink: it is reference, not the point of the row.
     @ViewBuilder
     private var trailing: some View {
         if let remaining = viewModel.remainingText(for: task) {
@@ -136,50 +112,78 @@ private struct TaskRowView: View {
                 .font(Tokens.Typography.timeCell)
                 .foregroundStyle((viewModel.remaining(for: task) ?? 0) < 0
                                  ? Tokens.Palette.invalid.color
-                                 : (isRunning ? Tokens.Palette.accent : Tokens.Palette.rowTime.color))
+                                 : Tokens.Palette.textSecondary.color)
         } else {
             Text(viewModel.elapsedText(for: task))
                 .font(Tokens.Typography.timeCell)
-                .foregroundStyle(isRunning ? Tokens.Palette.accent : Tokens.Palette.rowTime.color)
+                .foregroundStyle(Tokens.Palette.textSecondary.color)
         }
+    }
+
+    /// Start · Stop · Resume on the left of the pair, then finish, then the menu. Exactly the
+    /// actions the task's state allows, never a control that does nothing.
+    private var actions: some View {
+        HStack(spacing: 2) {
+            if isRunning {
+                TaskActionButton(symbol: Tokens.Icons.pause, help: "Stop \(task.title)",
+                                 tint: Tokens.Palette.accent, filled: true) {
+                    viewModel.stopTask(task)
+                }
+            } else {
+                TaskActionButton(symbol: Tokens.Icons.resume,
+                                 help: (viewModel.hasStarted(task) ? "Resume " : "Start ") + task.title,
+                                 tint: Tokens.Palette.accent) {
+                    viewModel.startTask(task)
+                }
+            }
+
+            TaskActionButton(symbol: "checkmark", help: "Finish \(task.title)",
+                             tint: Tokens.Palette.success.color) {
+                viewModel.finishTask(task)
+            }
+
+            TaskActionButton(symbol: "ellipsis", help: "More") {
+                viewModel.requestTaskMenu(task, anchor: menuAnchor)
+            }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("panel")) } action: {
+                menuAnchor = $0
+            }
+        }
+        .opacity(isHovering || isRunning ? 1 : 0.55)
     }
 }
 
-// MARK: - ⋯ menu
+/// A small square action in the app's button language: tinted glyph, hover fill, optional
+/// filled treatment for the one action that is "currently true".
+private struct TaskActionButton: View {
+    let symbol: String
+    let help: String
+    var tint: Color?
+    var filled = false
+    var action: () -> Void
 
-private struct TaskMenu: View {
-    @Bindable var viewModel: CheckInViewModel
-    let task: TaskItem
+    @State private var isHovering = false
 
     var body: some View {
-        Menu {
-            Button(viewModel.isRunning(task) ? "Pause" : "Start") { viewModel.toggleTask(task) }
-            Button("Finish") { viewModel.finishTask(task) }
-            Divider()
-            Menu("Timer") {
-                ForEach([15, 25, 45, 60], id: \.self) { minutes in
-                    Button("\(minutes) minutes") { viewModel.setTimer(task, text: "\(minutes)m") }
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(filled
+                                 ? Tokens.Palette.onAccent.color
+                                 : (tint ?? Tokens.Palette.textSecondary.color))
+                .frame(width: 22, height: 20)
+                .background {
+                    RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous)
+                        .fill(filled
+                              ? (tint ?? Tokens.Palette.accent)
+                              : (isHovering ? (tint ?? Tokens.Palette.textSecondary.color).opacity(0.16)
+                                 : Color.clear))
                 }
-                if task.timerSeconds != nil {
-                    Divider()
-                    Button("Clear timer") { viewModel.clearTimer(task) }
-                }
-            }
-            Menu("Move to project") {
-                ForEach(viewModel.allProjects) { project in
-                    Button(project.name) { viewModel.move(task, to: project) }
-                }
-            }
-            Divider()
-            Button("Delete", role: .destructive) { viewModel.deleteTask(task) }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Tokens.Palette.textSecondary.color)
+                .contentShape(RoundedRectangle(cornerRadius: Tokens.Radius.cell, style: .continuous))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .frame(width: 18)
+        .buttonStyle(.plain)
+        .help(help)
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -189,6 +193,7 @@ private struct NewTaskField: View {
     @Bindable var viewModel: CheckInViewModel
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: Tokens.Space.s2) {
             Image(systemName: "circle")
                 .font(.system(size: 13))
@@ -209,11 +214,19 @@ private struct NewTaskField: View {
                 onEndEditing: { viewModel.commitNewTask() }
             )
         }
-        .padding(.horizontal, Tokens.Space.rowInset)
-        .frame(height: Tokens.Size.listRowHeight)
-        .background {
-            RoundedRectangle(cornerRadius: Tokens.Radius.row, style: .continuous)
-                .fill(Tokens.Palette.fieldBackground.color)
+            .padding(.horizontal, Tokens.Space.rowInset)
+            .frame(height: Tokens.Size.listRowHeight)
+            .background {
+                RoundedRectangle(cornerRadius: Tokens.Radius.row, style: .continuous)
+                    .fill(Tokens.Palette.fieldBackground.color)
+            }
+
+            if let error = viewModel.newTaskError {
+                Text(error)
+                    .font(Tokens.Typography.caption)
+                    .foregroundStyle(Tokens.Palette.invalid.color)
+                    .padding(.horizontal, Tokens.Space.rowInset)
+            }
         }
         .transition(.scale(scale: 0.95).combined(with: .opacity))
     }

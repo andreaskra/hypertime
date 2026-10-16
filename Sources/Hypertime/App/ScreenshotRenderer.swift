@@ -90,6 +90,8 @@ enum ScreenshotRenderer {
             render("popup-tasks", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
 
             if let a {
+                render("task-menu", AnyView(TaskMenuView(viewModel: checkIn, task: a, onClose: {})), in: url,
+                       backdrop: Tokens.Materials.popover)
                 checkIn.expiredTaskID = a.id
                 render("popup-task-timer", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
                 checkIn.expiredTaskID = nil
@@ -142,10 +144,11 @@ enum ScreenshotRenderer {
             [OverflowMenuView.Item("Reports…", symbol: Tokens.Icons.reports) {},
              OverflowMenuView.Item("Settings…", symbol: Tokens.Icons.settings) {}],
             [OverflowMenuView.Item("Quit Hypertime", symbol: Tokens.Icons.quit, isDestructive: true) {}],
-        ])), in: url)
+        ])), in: url, backdrop: Tokens.Materials.popover)
 
         checkIn.prepareForShow()
-        render("day-picker", AnyView(DayPickerView(viewModel: checkIn, onPick: { _ in })), in: url)
+        render("day-picker", AnyView(DayPickerView(viewModel: checkIn, onPick: { _ in })), in: url,
+               backdrop: Tokens.Materials.popover)
 
         checkIn.prepareForShow()
         checkIn.stepDay(-1)
@@ -155,7 +158,8 @@ enum ScreenshotRenderer {
 
         render("pause-popover", AnyView(PausePopoverView(morningHour: model.settings.morningHour,
                                                         validate: { try? model.parser.parse($0).seconds },
-                                                        onPick: { _, _ in })), in: url)
+                                                        onPick: { _, _ in })), in: url,
+               backdrop: Tokens.Materials.popover)
 
         // Reports.
         reports.presentation = .chart
@@ -200,11 +204,15 @@ enum ScreenshotRenderer {
         exit(0)
     }
 
-    /// Renders one view in every appearance mode.
-    private static func render(_ name: String, _ view: AnyView, in directory: URL) {
+    /// Renders one view in every appearance mode. `backdrop` stands in for the chrome a
+    /// surface gets from AppKit rather than from the view — an `NSPopover`'s background —
+    /// without which a menu renders as invisible text on transparency.
+    private static func render(_ name: String, _ view: AnyView, in directory: URL,
+                               backdrop: Tokens.MaterialStyle? = nil) {
         for mode in modes {
             // Materials cannot be captured off-screen; draw their opaque fallback instead.
             let root = view
+                .glassBackdrop(backdrop)
                 .environment(\.opaqueSurfaces, true)
                 .environment(\.forcesActiveAppearance, true)
             let hosting = NSHostingView(rootView: root)
@@ -227,5 +235,13 @@ enum ScreenshotRenderer {
             guard let data = rep.representation(using: NSBitmapImageRep.FileType.png, properties: [:]) else { continue }
             try? data.write(to: directory.appendingPathComponent("\(name)-\(mode.suffix).png"))
         }
+    }
+}
+
+private extension View {
+    /// Paints a material behind the view, or nothing at all when there is none to paint.
+    @ViewBuilder
+    func glassBackdrop(_ style: Tokens.MaterialStyle?) -> some View {
+        if let style { self.glass(style, radius: Tokens.Radius.panel) } else { self }
     }
 }

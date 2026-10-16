@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var pausePopover: NSPopover?
     private var menuPopover: NSPopover?
     private var dayPickerPopover: NSPopover?
+    private var taskMenuPopover: NSPopover?
 
     /// True until the launch activation has been consumed, so it is not mistaken for Cmd+Tab.
     private var isLaunching = true
@@ -171,6 +172,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let anchor = NSRect(x: 24, y: self.panel.dayHeaderY(in: view), width: 20, height: 18)
             self.showDayPicker(anchor: anchor, in: view)
         }
+        panel.onTaskMenuRequested = { [weak self] task, anchor, view in
+            self?.showTaskMenu(task, anchor: anchor, in: view)
+        }
         panel.onPauseRequested = { [weak self] view in
             guard let self else { return }
             // Anchored under the pause icon button in the popup header.
@@ -296,6 +300,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         ))
         present(popover, anchor: anchor, in: view)
         dayPickerPopover = popover
+    }
+
+    /// A task's ⋯ menu, in the app's styling rather than a system menu.
+    private func showTaskMenu(_ task: TaskItem, anchor: NSRect, in view: NSView) {
+        taskMenuPopover?.close()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        popover.contentViewController = NSHostingController(rootView: TaskMenuView(
+            viewModel: panel.viewModel,
+            task: task,
+            onClose: { [weak self] in
+                self?.taskMenuPopover?.close()
+                self?.taskMenuPopover = nil
+            }
+        ))
+        present(popover, anchor: anchor, in: view)
+        taskMenuPopover = popover
     }
 
     /// Popovers steal key status from the panel; tell it so it does not dismiss underneath them.

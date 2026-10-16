@@ -299,15 +299,22 @@ enum SelfTest {
         }
         check("…under the project the popup is showing", task.projectID == project?.id)
 
-        viewModel.toggleTask(task)
-        check("clicking a task hands it the clock", viewModel.isRunning(task))
+        viewModel.startTask(task)
+        check("the start button hands it the clock", viewModel.isRunning(task))
+        check("…and a running task cannot be deleted", !viewModel.canDelete(task))
         check("…and the bucket stops accruing", model.engine.activeTaskID == task.id)
         let bucketBefore = model.engine.pendingSeconds
         model.engine.tick()
         check("…leaving the pending bucket alone", model.engine.pendingSeconds == bucketBefore)
 
-        viewModel.toggleTask(task)
-        check("clicking it again pauses it", !viewModel.isRunning(task) && model.engine.activeTaskID == nil)
+        viewModel.stopTask(task)
+        check("the stop button pauses it", !viewModel.isRunning(task) && model.engine.activeTaskID == nil)
+        check("…a stopped task can be deleted", viewModel.canDelete(task))
+        try? model.store.addTaskSeconds(task: task.id, project: task.projectID, day: model.today, 60)
+        check("…and reads as resumable once it has time on it", viewModel.hasStarted(task))
+        viewModel.startTask(task)
+        check("…and resumes from where it was", viewModel.isRunning(task))
+        viewModel.stopTask(task)
 
         viewModel.setTimer(task, text: "25m")
         check("a timer can be set from the menu",
@@ -321,6 +328,23 @@ enum SelfTest {
         viewModel.commitFinish()
         check("…then the task leaves the list", !viewModel.tasks.contains { $0.id == task.id })
         check("…and is marked complete", model.task(task.id)?.isComplete == true)
+
+        // ↩ on a pending task never throws the title away: it either files, or the row stays
+        // with the text still in it. Losing what somebody typed is never an outcome.
+        viewModel.addTask()
+        viewModel.newTaskTitle = "Needs a home"
+        viewModel.projectTextChanged("")              // no project named at all
+        let filedIt = viewModel.commitNewTask()
+        check("↩ on a pending task never loses the title",
+              filedIt ? viewModel.tasks.contains { $0.title == "Needs a home" }
+                      : viewModel.newTaskTitle == "Needs a home",
+              filedIt ? "filed it" : "kept the row")
+        check("…and an unfiled row says why", filedIt || viewModel.newTaskError != nil)
+        check("…while an empty field with no project still finds one", filedIt)
+        if let filed = viewModel.tasks.first(where: { $0.title == "Needs a home" }) {
+            viewModel.deleteTask(filed)
+            viewModel.commitDelete()
+        }
 
         viewModel.addTask()
         viewModel.newTaskTitle = "Doomed"

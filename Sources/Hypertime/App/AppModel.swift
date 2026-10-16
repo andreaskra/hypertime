@@ -159,8 +159,12 @@ final class AppModel {
     @discardableResult
     func createTask(title: String, projectName: String) -> TaskItem? {
         let name = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let project = name.isEmpty ? currentProject : try? store.findOrCreateProject(named: name)
-        else { return nil }
+        // Fall back to whatever is being tracked, then to the most recent project, so a task
+        // typed before any project is named still has somewhere to live.
+        let project = name.isEmpty
+            ? (currentProject ?? projects().first)
+            : try? store.findOrCreateProject(named: name)
+        guard let project else { return nil }
         return try? store.createTask(projectID: project.id, title: title)
     }
 
