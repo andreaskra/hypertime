@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import HypertimeCore
 
 /// `--self-test`: headless smoke test of the AppKit layer (status item, panel, commit flow,
@@ -54,6 +55,8 @@ enum SelfTest {
         checkLiveFieldIsLeftAlone(panel, model)
         checkProjectCanBeChanged(panel, model)
         checkNewTaskSurvivesAClick(panel)
+        checkTasksAreNeverLost(panel)
+        checkTimerReturnKey(model)
 
         // Opening by hand while another app holds the keyboard: losing key status in the first
         // moments must make the panel insist, not dismiss itself.
@@ -624,15 +627,205 @@ enum SelfTest {
         check("clicking into it does not dismiss it", viewModel.isAddingTask)
         check("…and it still holds the keyboard", window.firstResponder === field.currentEditor())
 
-        viewModel.newTaskTitle = "Typed into it"
-        viewModel.commitNewTask()
-        check("…and a title can be typed and kept",
-              viewModel.tasks.contains { $0.title == "Typed into it" })
+        type("Typed into it", into: field)
+        check("…and a title typed into the real field reaches the view model",
+              viewModel.newTaskTitle == "Typed into it", "\"\(viewModel.newTaskTitle)\"")
+        pressReturn(in: field)
+        check("…and ↩ keeps it", viewModel.tasks.contains { $0.title == "Typed into it" })
         if let created = viewModel.tasks.first(where: { $0.title == "Typed into it" }) {
             viewModel.deleteTask(created)
             viewModel.commitDelete()
         }
         panel.hide()
+    }
+
+    /// The reported sequence, driven through the real field: add a task, click +, type a
+    /// second one, press ↩, click + again. A task must never be lost at any step of it.
+    private static func checkTasksAreNeverLost(_ panel: CheckInPanelController) {
+        panel.show(mode: .focused)
+        let viewModel = panel.viewModel
+        for task in viewModel.tasks { viewModel.deleteTask(task); viewModel.commitDelete() }
+
+        func newTaskField() -> NSTextField? {
+            settle()
+            guard let window = NSApp.windows.first(where: { $0 is CheckInPanel }) else { return nil }
+            return field(in: window.contentView, placeholder: "What needs doing?")
+        }
+
+        // 1 — the first task, typed and entered the way a person does it.
+        viewModel.addTask()
+        guard let first = newTaskField() else {
+            check("the new-task row appears", false)
+            return
+        }
+        // Exactly one field may claim the keyboard. Two that both believe they have it chase
+        // first responder every frame, and the typing lands in whichever chased last.
+        check("the new-task row is the only thing claiming focus", viewModel.focus == .newTask,
+              "\(viewModel.focus)")
+        settle()
+        check("…so it is the field that actually holds the keyboard",
+              first.window?.firstResponder === first.currentEditor())
+
+        type("First task", into: first)
+        check("typing reaches the view model", viewModel.newTaskTitle == "First task",
+              "field \"\(first.stringValue)\", model \"\(viewModel.newTaskTitle)\", "
+              + "editor \(first.currentEditor() == nil ? "nil" : "live")")
+        check("↩ files the first task", pressReturn(in: first))
+        settle()
+        check("…and it is in the list", viewModel.tasks.contains { $0.title == "First task" })
+
+        // 2/3 — click +, type a second, press ↩.
+        viewModel.addTask()
+        guard let second = newTaskField() else {
+            check("the new-task row comes back for a second task", false)
+            return
+        }
+        type("Second task", into: second)
+        check("the second title reaches the view model", viewModel.newTaskTitle == "Second task",
+              "field \"\(second.stringValue)\", model \"\(viewModel.newTaskTitle)\", "
+              + "same field as the first: \(second === first)")
+        _ = pressReturn(in: second)
+        settle()
+        check("↩ files the second task too",
+              viewModel.tasks.contains { $0.title == "Second task" },
+              viewModel.tasks.map(\.title).joined(separator: ", "))
+
+        // 4 — and the other way round: + pressed while a title is still pending keeps it.
+        viewModel.addTask()
+        guard let third = newTaskField() else {
+            check("the new-task row comes back a third time", false)
+            return
+        }
+        type("Third task", into: third)
+        viewModel.addTask()
+        settle()
+        check("+ with a title pending files it rather than dropping it",
+              viewModel.tasks.contains { $0.title == "Third task" },
+              viewModel.tasks.map(\.title).joined(separator: ", "))
+        check("…and opens a fresh row ready to type", viewModel.isAddingTask && viewModel.newTaskTitle.isEmpty)
+
+        viewModel.cancelNewTask()
+        settle()
+
+        // Closing the popup on a typed title files it rather than taking it down with the panel.
+        viewModel.addTask()
+        if let pending = newTaskField() { type("Typed then dismissed", into: pending) }
+        panel.hide()
+        settle()
+        check("closing the popup on a pending title keeps it",
+              viewModel.tasks.contains { $0.title == "Typed then dismissed" },
+              viewModel.tasks.map(\.title).joined(separator: ", "))
+        panel.show(mode: .focused)
+        settle()
+
+        // A row nobody can see is a row that was lost, whatever the database says. Keep
+        // adding until the list is long enough to push the panel past its natural height.
+        for n in 4...8 {
+            viewModel.addTask()
+            viewModel.newTaskTitle = "Task \(n)"
+            viewModel.commitNewTask()
+        }
+        settle()
+        settle()
+        if let window = NSApp.windows.first(where: { $0 is CheckInPanel }),
+           let content = window.contentView {
+            let needed = content.fittingSize.height
+            check("the panel is tall enough for every task row",
+                  window.frame.height + 1 >= needed,
+                  String(format: "panel %.0f, content %.0f, %d tasks",
+                         window.frame.height, needed, viewModel.tasks.count))
+        }
+
+        for task in viewModel.tasks { viewModel.deleteTask(task); viewModel.commitDelete() }
+        panel.hide()
+    }
+
+    /// ↩ has to reach the Set button through the popover's own key handling, which is the
+    /// part nobody can see working until it does not.
+    private static func checkTimerReturnKey(_ model: AppModel) {
+        guard let project = model.projects().first,
+              let task = try? model.store.createTask(projectID: project.id, title: "Timer key test") else {
+            check("a task to hang a timer on", false)
+            return
+        }
+        defer { try? model.store.deleteTask(id: task.id) }
+
+        var picked: Seconds?
+        let view = TaskMenuView(viewModel: CheckInViewModel(model: model), task: task,
+                                startOn: .timer, onClose: {})
+        let hosting = NSHostingView(rootView: view)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 260),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = hosting
+        window.setFrameOrigin(NSPoint(x: -5000, y: -5000))
+        window.makeKeyAndOrderFront(nil)
+        hosting.layoutSubtreeIfNeeded()
+        settle()
+
+        // Aiming is not confirming (reported): a press, a drag and a release on the live page
+        // must leave the task untimed until ↩ or Set says otherwise.
+        if let track = trackingView(in: hosting) {
+            let y = track.bounds.midY
+            track.mouseDown(with: mouseEvent(.leftMouseDown, at: NSPoint(x: track.bounds.midX, y: y)))
+            track.mouseDragged(with: mouseEvent(.leftMouseDragged, at: NSPoint(x: track.bounds.maxX, y: y)))
+            track.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: track.bounds.maxX, y: y)))
+            settle()
+            check("dragging the slider sets no timer on its own",
+                  (try? model.store.task(id: task.id))?.timerSeconds == nil,
+                  "\((try? model.store.task(id: task.id))??.timerSeconds.map(String.init) ?? "none")")
+        } else {
+            check("the slider's track is in the page", false)
+        }
+
+        // The Set button is the page's default action; this is the event AppKit delivers.
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                     timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                     characters: "\r", charactersIgnoringModifiers: "\r",
+                                     isARepeat: false, keyCode: 36)
+        let handled = event.map { window.performKeyEquivalent(with: $0) } ?? false
+        settle()
+        picked = (try? model.store.task(id: task.id))?.timerSeconds
+        check("↩ on the timer page sets the timer", handled && picked != nil,
+              "handled \(handled), timer \(picked.map(String.init) ?? "none")")
+        window.orderOut(nil)
+    }
+
+    /// Types into the real field editor, so the delegate fires exactly as it does for a person.
+    private static func type(_ text: String, into field: NSTextField) {
+        field.window?.makeFirstResponder(field)
+        settle()
+        guard let editor = field.currentEditor() else {
+            field.stringValue = text
+            return
+        }
+        editor.selectAll(nil)
+        if let view = editor as? NSTextView {
+            view.insertText(text, replacementRange: view.selectedRange())
+        } else {
+            editor.insertText(text)
+        }
+        settle()
+    }
+
+    /// The ↩ path AppKit itself uses: the field editor asks the delegate to take the command.
+    @discardableResult
+    private static func pressReturn(in field: NSTextField) -> Bool {
+        guard let editor = field.currentEditor() as? NSTextView,
+              let delegate = field.delegate else { return false }
+        return delegate.control?(field, textView: editor, doCommandBy: .insertNewline) ?? false
+    }
+
+    private static func settle() {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.08))
+    }
+
+    private static func trackingView(in view: NSView?) -> SliderInteraction.TrackingView? {
+        guard let view else { return nil }
+        if let track = view as? SliderInteraction.TrackingView { return track }
+        for subview in view.subviews {
+            if let found = trackingView(in: subview) { return found }
+        }
+        return nil
     }
 
     private static func field(in view: NSView?, placeholder: String) -> NSTextField? {
@@ -766,7 +959,7 @@ enum SelfTest {
         var steps = 0
         var hovering = false
         view.onHover = { hovering = $0 }
-        view.onPress = { x, _ in pressed = x }
+        view.onPress = { pressed = $0 }
         view.onDrag = { dragged = $0 }
         view.onRelease = { releases += 1 }
         view.onScroll = { steps += $0 }
@@ -818,20 +1011,6 @@ enum SelfTest {
         check("…while a press on bare track takes the cursor's",
               !TimerSlider.isOnKnob(pressX: knobX + Tokens.Slider.knob, knobX: knobX))
 
-        // Reported the other way round at first: a click had to be able to accept what the
-        // wheel had just chosen, wherever the cursor happened to be sitting.
-        var keptValue: Bool?
-        view.onPress = { _, keeps in keptValue = keeps }
-        if let up = wheelEvent(1) { view.scrollWheel(with: up) }
-        view.mouseDown(with: mouseEvent(.leftMouseDown, at: NSPoint(x: 4, y: middle.y)))
-        view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: 4, y: middle.y)))
-        check("a click straight after a scroll takes the scrolled length", keptValue == true)
-        if let up = wheelEvent(1) { view.scrollWheel(with: up) }
-        view.mouseMoved(with: mouseEvent(.mouseMoved, at: NSPoint(x: width * 0.3, y: middle.y)))
-        view.mouseDown(with: mouseEvent(.leftMouseDown, at: NSPoint(x: width * 0.3, y: middle.y)))
-        view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: width * 0.3, y: middle.y)))
-        check("…but moving the cursor first means the spot you clicked", keptValue == false)
-        view.onPress = { x, _ in pressed = x }
         steps = 0
         releases = 0
 
@@ -840,12 +1019,12 @@ enum SelfTest {
         view.mouseDown(with: mouseEvent(.leftMouseDown, at: middle))
         view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: NSPoint(x: width * 0.9, y: middle.y)))
         check("a drag moves the knob", dragged != nil)
-        check("…without setting anything until it is let go", releases == 0)
         view.mouseExited(with: mouseEvent(.mouseMoved, at: NSPoint(x: -4, y: middle.y)))
         view.mouseDragged(with: mouseEvent(.leftMouseDragged, at: NSPoint(x: width * 0.95, y: middle.y)))
         check("…and a drag off the edge is still a drag", dragged == width * 0.95)
         view.mouseUp(with: mouseEvent(.leftMouseUp, at: NSPoint(x: width * 0.95, y: middle.y)))
-        check("releasing sets the timer", releases == 1)
+        // Aiming is not confirming: only ↩ or the Set button files a timer.
+        check("the drag ends cleanly", releases == 1)
 
         if let up = wheelEvent(1), let down = wheelEvent(-1) {
             view.scrollWheel(with: up)
@@ -853,7 +1032,6 @@ enum SelfTest {
             view.scrollWheel(with: down)
             view.scrollWheel(with: down)
             check("…and shortens it scrolling down", steps == -1, "\(steps)")
-            check("…without setting anything on its own", releases == 1)
         } else {
             note("scroll wheel not measured: synthetic wheel events unavailable")
         }

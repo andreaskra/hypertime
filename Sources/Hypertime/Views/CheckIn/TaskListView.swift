@@ -202,7 +202,7 @@ private struct NewTaskField: View {
                 text: viewModel.newTaskTitle,
                 placeholder: "What needs doing?",
                 font: Tokens.Typography.listRow,
-                isFocused: true,
+                isFocused: viewModel.focus == .newTask,
                 onText: { viewModel.newTaskTitle = $0 },
                 onCommand: { selector, _ in
                     switch selector {
@@ -211,7 +211,7 @@ private struct NewTaskField: View {
                     default: return false
                     }
                 },
-                onEndEditing: { viewModel.commitNewTask() }
+                onEndEditing: { viewModel.commitNewTaskIfTyped() }
             )
         }
             .padding(.horizontal, Tokens.Space.rowInset)

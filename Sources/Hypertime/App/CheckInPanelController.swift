@@ -209,9 +209,11 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     /// Animated dismiss; `orderOut` happens when the animation is done. Never changes focus.
     func hide() {
         focusedShownAt = nil
-        // A finish or a delete that is still playing out must land, not evaporate with the panel.
+        // A finish or a delete that is still playing out must land, not evaporate with the panel
+        // — and neither may a title still sitting in the new-task row.
         viewModel.commitFinish()
         viewModel.commitDelete()
+        viewModel.commitNewTaskIfTyped()
         cancelAutoHide()
         guard panel.isVisible else { return }
         withAnimation(Tokens.Motion.popupDismiss.animation(reduceMotion: reduceMotion)) {

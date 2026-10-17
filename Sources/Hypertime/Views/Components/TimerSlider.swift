@@ -6,8 +6,9 @@ import HypertimeCore
 /// so the first hour — where nearly every timer lands — gets two thirds of the travel.
 ///
 /// The knob moves when you ask it to and never otherwise: press the track and it goes there,
-/// drag it, or roll the wheel over it a slot at a time. Hovering changes nothing. Letting go
-/// sets the timer, so what the readout says when you release is what you get.
+/// drag it, or roll the wheel over it a slot at a time. Hovering changes nothing, and neither
+/// does letting go — aiming and confirming are separate acts, so the timer is set by ↩ or by
+/// the Set button and by nothing else.
 struct TimerSlider: View {
     /// The timer already on the task, marked on the track so it can be found again.
     var current: Seconds?
@@ -44,10 +45,15 @@ struct TimerSlider: View {
                 }
             }
             .frame(height: Tokens.Slider.bandHeight + Tokens.Slider.scaleHeight + Tokens.Space.s1)
-            Text("scroll or drag to adjust · click to set")
-                .font(Tokens.Typography.keyboardHint)
-                .foregroundStyle(Tokens.Palette.textTertiary.color)
-                .frame(maxWidth: .infinity, alignment: .center)
+            HStack(spacing: Tokens.Space.s2) {
+                Text("drag or scroll to adjust")
+                    .font(Tokens.Typography.keyboardHint)
+                    .foregroundStyle(Tokens.Palette.textTertiary.color)
+                Spacer(minLength: Tokens.Space.s2)
+                Button("Set") { onPick(shownSeconds) }
+                    .hypertimeButton(.primary)
+                    .keyboardShortcut(.defaultAction)
+            }
         }
     }
 
@@ -124,12 +130,12 @@ struct TimerSlider: View {
         .overlay {
             SliderInteraction(
                 onHover: { isHovering = $0 },
-                onPress: { x, keepsValue in
+                onPress: { x in
                     isDragging = true
                     let knob = knobX(width: width)
-                    if keepsValue || Self.isOnKnob(pressX: x, knobX: knob) {
-                        // Hold the length that is already chosen and let a drag move it from
-                        // there, rather than throwing it away for whatever is under the cursor.
+                    if Self.isOnKnob(pressX: x, knobX: knob) {
+                        // Grabbing the knob must not jerk it: it moves relative to the cursor
+                        // from where it already is.
                         grabOffset = knob - x
                     } else {
                         grabOffset = 0
@@ -137,10 +143,7 @@ struct TimerSlider: View {
                     }
                 },
                 onDrag: { x in move(to: x, width: width) },
-                onRelease: {
-                    isDragging = false
-                    onPick(shownSeconds)
-                },
+                onRelease: { isDragging = false },
                 onScroll: { steps in
                     index = min(max(index + steps, 0), TimerLadder.slots.count - 1)
                 }
@@ -182,9 +185,7 @@ struct TimerSlider: View {
 /// as points inside the view so the SwiftUI side owns every pixel of the drawing.
 struct SliderInteraction: NSViewRepresentable {
     var onHover: (Bool) -> Void
-    /// The press position, and whether it should keep the length already chosen — true for a
-    /// click that follows a scroll with no mouse movement in between.
-    var onPress: (CGFloat, Bool) -> Void
+    var onPress: (CGFloat) -> Void
     var onDrag: (CGFloat) -> Void
     var onRelease: () -> Void
     var onScroll: (Int) -> Void
@@ -201,15 +202,12 @@ struct SliderInteraction: NSViewRepresentable {
 
     final class TrackingView: NSView {
         var onHover: ((Bool) -> Void)?
-        var onPress: ((CGFloat, Bool) -> Void)?
+        var onPress: ((CGFloat) -> Void)?
         var onDrag: ((CGFloat) -> Void)?
         var onRelease: (() -> Void)?
         var onScroll: ((Int) -> Void)?
 
         private var isDragging = false
-        /// Set by the wheel and cleared by the first real mouse movement: a click straight
-        /// after a scroll means "that one", while moving the cursor first means "that spot".
-        private var keepsValue = false
         private var wheelTravel: CGFloat = 0
         /// Trackpad deltas arrive in points; this many of them is one slot.
         private let travelPerStep: CGFloat = 6
@@ -219,7 +217,7 @@ struct SliderInteraction: NSViewRepresentable {
             trackingAreas.forEach(removeTrackingArea)
             addTrackingArea(NSTrackingArea(
                 rect: .zero,
-                options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+                options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
                 owner: self))
         }
 
@@ -227,11 +225,8 @@ struct SliderInteraction: NSViewRepresentable {
             convert(event.locationInWindow, from: nil).x
         }
 
-        /// Hovering is a cursor state, nothing more: the knob stays where it was put. The
-        /// only thing movement does is retire a scroll's claim on the next click.
+        /// Hovering is a cursor state, nothing more: the knob stays where it was put.
         override func mouseEntered(with event: NSEvent) { onHover?(true) }
-
-        override func mouseMoved(with event: NSEvent) { keepsValue = false }
 
         override func mouseExited(with event: NSEvent) {
             // A drag that wanders off the track is still a drag.
@@ -241,8 +236,7 @@ struct SliderInteraction: NSViewRepresentable {
 
         override func mouseDown(with event: NSEvent) {
             isDragging = true
-            onPress?(pointerX(event), keepsValue)
-            keepsValue = false
+            onPress?(pointerX(event))
         }
 
         override func mouseDragged(with event: NSEvent) {
@@ -263,7 +257,6 @@ struct SliderInteraction: NSViewRepresentable {
             let delta = abs(vertical) >= abs(horizontal) ? vertical : horizontal
             guard delta != 0 else { return }
 
-            keepsValue = true
             guard event.hasPreciseScrollingDeltas else {
                 onScroll?(delta > 0 ? 1 : -1)
                 return

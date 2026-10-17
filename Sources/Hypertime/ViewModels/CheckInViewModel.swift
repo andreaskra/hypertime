@@ -9,6 +9,10 @@ enum CheckInFocus: Hashable {
     case total(UUID)
     /// The Confirm button ends the Tab order (§6.4, design handoff "Focus & keyboard").
     case confirm
+    /// The row that opens under the task list. Not in the Tab order: it is a mode you enter
+    /// with + and leave with ↩ or Esc. It is in here at all so that exactly one field claims
+    /// the keyboard — two that both believe they have it fight over it every frame.
+    case newTask
     case none
 }
 
@@ -290,10 +294,16 @@ final class CheckInViewModel {
         return (left < 0 ? "+" : "") + model.formatter.string(abs(left), style: .clock)
     }
 
+    /// The + button. A title still sitting in the row is filed before a new row opens —
+    /// never thrown away. If it cannot be filed, the row keeps it and says why.
     func addTask() {
+        if isAddingTask, !newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard commitNewTask() else { return }
+        }
         isAddingTask = true
         newTaskTitle = ""
         newTaskError = nil
+        focus = .newTask
     }
 
     /// ↩ on a pending task always keeps it. A title that cannot be filed yet holds the row open
@@ -304,6 +314,7 @@ final class CheckInViewModel {
         guard !title.isEmpty else {
             isAddingTask = false
             newTaskError = nil
+            if focus == .newTask { focus = .none }
             return false
         }
         // The + button opens the task under the project the popup is showing.
@@ -315,14 +326,25 @@ final class CheckInViewModel {
         newTaskTitle = ""
         newTaskError = nil
         isAddingTask = false
+        if focus == .newTask { focus = .none }
         refreshAfterTaskChange()
         return true
+    }
+
+    /// What losing the keyboard means. A field resigns for all sorts of reasons — the window
+    /// losing key, a rebuild, another field taking over — so this files what was typed and
+    /// otherwise leaves the row exactly as it was. Closing an empty row here is how a row
+    /// somebody was still thinking about used to vanish under them.
+    func commitNewTaskIfTyped() {
+        guard !newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        commitNewTask()
     }
 
     func cancelNewTask() {
         isAddingTask = false
         newTaskTitle = ""
         newTaskError = nil
+        if focus == .newTask { focus = .none }
     }
 
     func finishTask(_ task: TaskItem) {
@@ -713,7 +735,7 @@ final class CheckInViewModel {
             } else {
                 focus = .confirm
             }
-        case .confirm, .none:
+        case .confirm, .newTask, .none:
             focus = .project
         }
     }
@@ -732,7 +754,7 @@ final class CheckInViewModel {
             }
         case .confirm:
             focus = todayRows.last.map { .total($0.project.id) } ?? .time
-        case .none:
+        case .newTask, .none:
             focus = .project
         }
     }
