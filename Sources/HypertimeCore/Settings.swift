@@ -19,6 +19,7 @@ public final class Settings: @unchecked Sendable {
         case csvIncludeTotals
         case flushIntervalSeconds
         case passivePopupAutoHideSeconds
+        case menuBarMetrics
     }
 
     public static let checkInIntervalChoices = [0, 15, 30, 45, 60, 90, 120]
@@ -45,6 +46,7 @@ public final class Settings: @unchecked Sendable {
             Key.csvIncludeTotals.rawValue: true,
             Key.flushIntervalSeconds.rawValue: 15,
             Key.passivePopupAutoHideSeconds.rawValue: 20,
+            Key.menuBarMetrics.rawValue: "",
         ])
     }
 
@@ -89,6 +91,19 @@ public final class Settings: @unchecked Sendable {
     public var showElapsedInMenuBar: Bool {
         get { defaults.bool(forKey: Key.showElapsedInMenuBar.rawValue) }
         set { set(newValue, .showElapsedInMenuBar) }
+    }
+
+    /// Which load figures ride along in the menu bar. Stored as a list so the order the
+    /// metrics are declared in is the order they appear, however they were switched on.
+    public var menuBarMetrics: Set<SystemMetric> {
+        get {
+            let raw = defaults.string(forKey: Key.menuBarMetrics.rawValue) ?? ""
+            return Set(raw.split(separator: ",").compactMap { SystemMetric(rawValue: String($0)) })
+        }
+        set {
+            let ordered = SystemMetric.allCases.filter(newValue.contains).map(\.rawValue)
+            set(ordered.joined(separator: ","), .menuBarMetrics)
+        }
     }
 
     public var weekStart: Weekday {

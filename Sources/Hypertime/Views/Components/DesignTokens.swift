@@ -144,6 +144,8 @@ enum Tokens {
         static let periodTitle = FontToken(family: .display, size: 15, weight: .semibold, tracking: 0, tabular: false)
         static let menuBarTime = FontToken(family: .text, size: 11.5, weight: .regular, tracking: 0, tabular: true)
         static let keyboardHint = FontToken(family: .text, size: 10, weight: .regular, tracking: 0, tabular: false)
+        /// Tabular, so three figures side by side do not shuffle as they tick.
+        static let loadValue = FontToken(family: .text, size: 11, weight: .medium, tracking: 0, tabular: true)
     }
 
     // MARK: - Metrics
@@ -268,6 +270,24 @@ enum Tokens {
         static let discard: CGFloat = 12
         static let secondary: CGFloat = 13
         static let primary: CGFloat = 14
+    }
+
+    /// The one sound the app makes: a timer reaching zero (T-12). A system sound rather than
+    /// a bundled one, so it follows whatever the user has set their alert volume to.
+    enum Sound {
+        static let timerExpired = NSSound.Name("Submarine")
+    }
+
+    /// The system load bar across the top of the popup. Not from `tokens.json`: there was no
+    /// such thing in the handoff.
+    enum Load {
+        static let inset: CGFloat = 7
+        static let labelGap: CGFloat = 5
+        static let pinnedTint: Double = 0.12
+        /// Past this share of capacity a figure is the machine's problem, and says so in the
+        /// colour the rest of the app uses for trouble.
+        static let strainedAt: Double = 0.85
+        static let gauge = (height: CGFloat(3), gap: CGFloat(4))
     }
 
     /// The timer slider (T-10). Its own group: it replaced the handoff's list of fixed

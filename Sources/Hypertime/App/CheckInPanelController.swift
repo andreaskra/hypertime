@@ -293,9 +293,16 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
     }
 
     /// A timer reaching zero is an alert, not a nudge: it takes the keyboard (T-12).
+    ///
+    /// The panel alone is not enough to count as being told. It is a menu bar panel, so a
+    /// full-screen app on another Space swallows it completely — which is exactly when a
+    /// timer is most likely to run out. The Dock bounce and the sound are the parts that
+    /// still arrive, and both stop the moment the popup is attended to.
     func showTimerExpired(_ taskID: UUID) {
         show(mode: .focused)
         viewModel.expiredTaskID = taskID
+        NSApp.requestUserAttention(.criticalRequest)
+        NSSound(named: Tokens.Sound.timerExpired)?.play()
     }
 
     /// Called by the 1 s timer while visible.

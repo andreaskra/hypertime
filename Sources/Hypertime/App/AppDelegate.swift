@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var settingsWindow: SettingsWindowController!
     private var export: ExportController!
     private var systemEvents: SystemEventsObserver!
+    private let loadItems = LoadStatusItems()
     private var settingsTask: Task<Void, Never>?
 
     private var pausePopover: NSPopover?
@@ -197,6 +198,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         model.onCheckInDue = { [weak self] in self?.panel.show(mode: .passive) }
         model.onPauseEnded = { [weak self] in self?.panel.show(mode: .passive) }
         model.onTaskTimerExpired = { [weak self] taskID in self?.panel.showTimerExpired(taskID) }
+        model.onSystemLoad = { [weak self] load in self?.loadItems.update(load: load) }
+
+        // The figures the user pinned to the menu bar last time, and a way back to the popup
+        // from them — a number in the menu bar that does nothing when clicked is a tease.
+        loadItems.onClick = { [weak self] in self?.panel.toggle() }
+        loadItems.update(metrics: model.settings.menuBarMetrics)
+        loadItems.update(load: model.systemLoad)
+        panel.viewModel.onMenuBarMetricsChanged = { [weak self] in
+            guard let self else { return }
+            self.loadItems.update(metrics: self.model.settings.menuBarMetrics)
+            self.loadItems.update(load: self.model.systemLoad)
+        }
         model.onTick = { [weak self] in
             self?.panel.tick()
             self?.statusItem.refresh()

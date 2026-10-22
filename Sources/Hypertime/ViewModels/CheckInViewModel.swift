@@ -164,6 +164,8 @@ final class CheckInViewModel {
         refreshTime()
         refreshTasks()
         refreshRows()
+        menuBarMetrics = model.settings.menuBarMetrics
+        refreshSystemLoad()
         focus = .none
     }
 
@@ -172,6 +174,8 @@ final class CheckInViewModel {
         refreshTime()
         refreshStatus()
         refreshTotalsOnly()
+        refreshTaskSeconds()
+        refreshSystemLoad()
         if tasks.contains(where: { isRunning($0) }) { breakdown = model.taskBreakdown(for: visibleDay) }
     }
 
@@ -250,6 +254,46 @@ final class CheckInViewModel {
 
     func refreshTasks() {
         tasks = model.openTasks()
+        refreshTaskSeconds()
+    }
+
+    // MARK: - System load
+
+    /// The machine's own numbers, republished on the tick like everything else here.
+    private(set) var systemLoad = SystemLoad()
+
+    /// Which figures are also riding along in the menu bar.
+    private(set) var menuBarMetrics: Set<SystemMetric> = []
+
+    var onMenuBarMetricsChanged: (() -> Void)?
+
+    func refreshSystemLoad() {
+        if model.systemLoad != systemLoad { systemLoad = model.systemLoad }
+    }
+
+    /// Clicking a figure puts it in the menu bar, or takes it back out.
+    func toggleMenuBarMetric(_ metric: SystemMetric) {
+        var metrics = menuBarMetrics
+        if metrics.contains(metric) { metrics.remove(metric) } else { metrics.insert(metric) }
+        menuBarMetrics = metrics
+        model.settings.menuBarMetrics = metrics
+        onMenuBarMetricsChanged?()
+    }
+
+    func isInMenuBar(_ metric: SystemMetric) -> Bool { menuBarMetrics.contains(metric) }
+
+    /// Live seconds per open task, republished every tick.
+    ///
+    /// A row that calls into the engine for its number reads nothing observable, so SwiftUI is
+    /// never told to redraw it: the timers only moved when something else — a hover — happened
+    /// to invalidate the row. Keeping the numbers in observed state is what makes them tick.
+    private(set) var taskSeconds: [UUID: Seconds] = [:]
+
+    func refreshTaskSeconds() {
+        var live: [UUID: Seconds] = [:]
+        for task in tasks { live[task.id] = model.engine.liveTaskSeconds(task.id) }
+        if let id = model.engine.activeTaskID { live[id] = model.engine.activeTaskSeconds }
+        if live != taskSeconds { taskSeconds = live }
     }
 
     var expiredTask: TaskItem? { expiredTaskID.flatMap(model.task) }
@@ -283,11 +327,14 @@ final class CheckInViewModel {
     func canDelete(_ task: TaskItem) -> Bool { !isRunning(task) }
 
     func elapsedText(for task: TaskItem) -> String {
-        model.display(model.engine.liveTaskSeconds(task.id))
+        model.display(taskSeconds[task.id] ?? 0)
     }
 
     /// Remaining time on a timed task; negative once it has overshot.
-    func remaining(for task: TaskItem) -> Seconds? { model.engine.taskRemaining(task) }
+    func remaining(for task: TaskItem) -> Seconds? {
+        guard let timer = task.timerSeconds else { return nil }
+        return timer - (taskSeconds[task.id] ?? 0)
+    }
 
     func remainingText(for task: TaskItem) -> String? {
         guard let left = remaining(for: task) else { return nil }

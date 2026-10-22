@@ -72,6 +72,16 @@ public final class TrackingEngine {
         return min(total, secondsPerDay)
     }
 
+    /// What the running task has accrued but not yet flushed to the database.
+    ///
+    /// Task time is committed as it happens (TD-01), so a report that reads only what has been
+    /// written shows it arriving in flush-sized jumps — a project's figure standing still for
+    /// fifteen seconds at a time while its task is plainly running.
+    public var unflushedTaskTime: (projectID: UUID, seconds: Seconds)? {
+        guard let projectID = taskProjectID, taskUnwritten > 0 else { return nil }
+        return (projectID, taskUnwritten)
+    }
+
     /// Everything the running task has accrued, including seconds not yet written.
     public var activeTaskSeconds: Seconds { taskBaselineSeconds + taskAccruedSinceStart }
 

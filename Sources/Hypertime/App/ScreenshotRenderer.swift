@@ -43,9 +43,23 @@ enum ScreenshotRenderer {
             model.engine.start(projectID: project.id)
         }
 
+        // Two reads, so the processor figure has a difference to work from: the QA renders
+        // are supposed to show what the bar really looks like.
+        model.sampleSystemLoad()
+        Thread.sleep(forTimeInterval: 0.3)
+        model.sampleSystemLoad()
+
         checkIn.prepareForShow()
         checkIn.timeText = "0:12:34"
         render("popup-hero", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+
+        // Two figures pinned to the menu bar, which is how the bar says which ones you are
+        // already watching.
+        checkIn.toggleMenuBarMetric(.cpu)
+        checkIn.toggleMenuBarMetric(.disk)
+        render("popup-load-pinned", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+        checkIn.toggleMenuBarMetric(.cpu)
+        checkIn.toggleMenuBarMetric(.disk)
 
         checkIn.focus = .project
         checkIn.projectTextChanged("e")

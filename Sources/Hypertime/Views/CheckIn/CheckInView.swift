@@ -22,6 +22,9 @@ struct CheckInView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: Tokens.Space.s3) {
+                // Above everything, because the point of it is to be seen in passing.
+                SystemLoadBar(viewModel: viewModel)
+
                 header
 
                 ProjectField(viewModel: viewModel)

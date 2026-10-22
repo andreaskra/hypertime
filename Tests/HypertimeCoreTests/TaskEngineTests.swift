@@ -287,4 +287,24 @@ struct IdleEngineTests {
         #expect(engine.status.isTracking)
         #expect(engine.pendingSeconds == 300)
     }
+
+    @Test("a project's total climbs with its running task, not in flush-sized jumps")
+    func projectTotalFollowsTheTask() throws {
+        let task = try store.createTask(projectID: project.id, title: "Draft the spec")
+        engine.start(projectID: project.id)
+        engine.startTask(task)
+
+        // Ten seconds in, well short of the fifteen-second flush.
+        run(seconds: 10)
+        let unflushed = engine.unflushedTaskTime
+        let today = LocalDate(clock.now(), calendar: clock.calendar)
+        #expect(unflushed?.projectID == project.id)
+        #expect((unflushed?.seconds ?? 0) > 0)
+        #expect(try store.seconds(project: project.id, day: today) == 0)
+
+        let builder = ReportBuilder(store: store, engine: engine, clock: clock, weekStart: .monday)
+        let row = try builder.report(for: .day(today)).rows.first { $0.project.id == project.id }
+        #expect(row?.seconds == unflushed?.seconds,
+                "the report must show what the task has banked, not only what reached the database")
+    }
 }

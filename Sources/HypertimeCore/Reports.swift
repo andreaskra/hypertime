@@ -66,6 +66,12 @@ public struct ReportBuilder {
             perProject[pending.projectID, default: [:]][today, default: 0] += pending.seconds
         }
 
+        // Seconds a running task has banked but not yet flushed (TD-01). Without this a
+        // project's total stands still between flushes while its task visibly ticks.
+        if let unflushed = engine?.unflushedTaskTime, range.contains(today) {
+            perProject[unflushed.projectID, default: [:]][today, default: 0] += unflushed.seconds
+        }
+
         // The current project is always listed, even with zero time.
         if let current = engine?.currentProjectID {
             perProject[current] = perProject[current] ?? [:]

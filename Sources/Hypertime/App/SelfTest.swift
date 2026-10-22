@@ -57,6 +57,8 @@ enum SelfTest {
         checkNewTaskSurvivesAClick(panel)
         checkTasksAreNeverLost(panel)
         checkTimerReturnKey(model)
+        checkTaskClockRuns(panel, model)
+        checkSystemLoad(panel, model)
 
         // Opening by hand while another app holds the keyboard: losing key status in the first
         // moments must make the panel insist, not dismiss itself.
@@ -88,10 +90,12 @@ enum SelfTest {
         check("typing opens the dropdown", viewModel.showsProjectList)
         // The dropdown belongs to the field it filters: it opens directly under the project
         // field and overlaps the amount, rather than floating a field and a caption away.
-        check("dropdown hangs off the project field", panel.presentation.listTop > 60,
+        // Bounds in points, so they move when the popup's anatomy does: the load bar added a
+        // row above the header, pushing everything below it down by its own height.
+        check("dropdown hangs off the project field", panel.presentation.listTop > 90,
               "\(panel.presentation.listTop)")
         check("dropdown starts above the amount field it covers",
-              panel.presentation.listTop < 120, "\(panel.presentation.listTop)")
+              panel.presentation.listTop < 155, "\(panel.presentation.listTop)")
         check("panel is tall enough for an open dropdown",
               panel.presentation.requiredHeight >= panel.presentation.listTop + panel.presentation.dropdownHeight)
 
@@ -736,6 +740,92 @@ enum SelfTest {
                          window.frame.height, needed, viewModel.tasks.count))
         }
 
+        for task in viewModel.tasks { viewModel.deleteTask(task); viewModel.commitDelete() }
+        panel.hide()
+    }
+
+    /// The load bar: real figures, on the scale the bar is drawn on, and a click that puts a
+    /// figure in the menu bar and takes it back out again.
+    private static func checkSystemLoad(_ panel: CheckInPanelController, _ model: AppModel) {
+        panel.show(mode: .focused)
+        let viewModel = panel.viewModel
+        let load = model.systemLoad
+        for metric in SystemMetric.allCases {
+            check("\(metric.label) reads inside the 0–100 scale the bar is drawn on",
+                  load[metric] >= 0 && load[metric] <= 1, "\(load.percent(metric))%")
+        }
+        note(String(format: "this machine: CPU %d%%, RAM %d%%, SSD %d%%",
+                    load.percent(.cpu), load.percent(.memory), load.percent(.disk)))
+        // The disk is never empty and the machine always has something resident; a reading of
+        // zero for either means the kernel call failed and the bar is quietly lying.
+        check("memory and disk report something real", load.memory > 0 && load.disk > 0)
+
+        let before = viewModel.menuBarMetrics
+        viewModel.toggleMenuBarMetric(.cpu)
+        check("clicking a figure puts it in the menu bar", viewModel.isInMenuBar(.cpu))
+        check("…and remembers it", model.settings.menuBarMetrics.contains(.cpu))
+        viewModel.toggleMenuBarMetric(.cpu)
+        check("…clicking again takes it back out", !viewModel.isInMenuBar(.cpu))
+        check("…and forgets it", !model.settings.menuBarMetrics.contains(.cpu))
+        check("…leaving the rest alone", viewModel.menuBarMetrics == before)
+
+        // An item that exists holds a slot in the menu bar whether or not it draws anything.
+        let items = LoadStatusItems()
+        items.update(metrics: [.cpu, .disk])
+        items.update(load: SystemLoad(cpu: 0.5, memory: 0.5, disk: 0.5))
+        check("the menu bar gets one item per chosen figure", items.isShowing == [.cpu, .disk],
+              "\(items.isShowing.map(\.label).sorted().joined(separator: ", "))")
+        items.update(metrics: [])
+        check("…and gives the space back when they are switched off", items.isShowing.isEmpty)
+        items.tearDown()
+        panel.hide()
+    }
+
+    /// A running task's number has to move on its own, and a timer reaching zero has to
+    /// reach the screen. Both are things the app does while nobody is touching it.
+    private static func checkTaskClockRuns(_ panel: CheckInPanelController, _ model: AppModel) {
+        panel.show(mode: .focused)
+        let viewModel = panel.viewModel
+        model.settings.idleTimeoutMinutes = 0
+        for task in viewModel.tasks { viewModel.deleteTask(task); viewModel.commitDelete() }
+
+        guard let project = model.projects().first,
+              let task = try? model.store.createTask(projectID: project.id, title: "Ticking task") else {
+            check("a task to run the clock on", false)
+            return
+        }
+        viewModel.refreshTasks()
+        viewModel.startTask(task)
+        let before = viewModel.taskSeconds[task.id] ?? -1
+        waitASecond()
+        model.engine.tick()
+        viewModel.tick()
+        let after = viewModel.taskSeconds[task.id] ?? -1
+        // Published state, not a call into the engine: a row can only redraw for what it reads.
+        check("a running task's seconds move on the tick alone", after > before,
+              "\(before) s then \(after) s")
+        check("…and the row's label moves with them",
+              viewModel.elapsedText(for: task) == model.display(after))
+
+        // T-12: the timer reaching zero is an alert that takes the keyboard.
+        panel.hide()
+        settle()
+        viewModel.expiredTaskID = nil
+        try? model.store.setTaskTimer(id: task.id, seconds: 1)
+        viewModel.refreshTasks()
+        if let timed = model.task(task.id) {
+            model.engine.startTask(timed)
+            waitASecond()
+            model.engine.tick()
+            // The expiry travels as an engine event, so give the stream a turn to deliver it.
+            for _ in 0..<20 where panel.viewModel.expiredTaskID == nil { settle() }
+        }
+        check("a timer reaching zero opens the popup", panel.isVisible)
+        check("…naming the task that ran out", panel.viewModel.expiredTaskID == task.id,
+              panel.viewModel.expiredTaskID.map(\.uuidString) ?? "none")
+
+        model.engine.stopTask()
+        viewModel.expiredTaskID = nil
         for task in viewModel.tasks { viewModel.deleteTask(task); viewModel.commitDelete() }
         panel.hide()
     }

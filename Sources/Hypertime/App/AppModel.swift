@@ -29,6 +29,7 @@ final class AppModel {
     let parser = TimeParser()
     let formatter = TimeFormatter()
     let pauseScheduler = PauseScheduler()
+    let systemLoadSource: SystemLoadSource
     let isDemo: Bool
 
     private var timer: Timer?
@@ -41,6 +42,14 @@ final class AppModel {
     var onStatusChanged: (() -> Void)?
     var onDataChanged: (() -> Void)?
     var onTaskTimerExpired: ((UUID) -> Void)?
+    var onSystemLoad: ((SystemLoad) -> Void)?
+
+    /// The machine's own figures, refreshed on the same heartbeat as everything else.
+    ///
+    /// Sampled whether or not the popup is open: processor usage only exists as a difference
+    /// between two reads, so a source that is only read when the popup opens reports nothing
+    /// the first time every time. Three counter reads a second cost nothing measurable.
+    private(set) var systemLoad = SystemLoad()
 
     init(arguments: [String] = CommandLine.arguments) throws {
         isDemo = arguments.contains("--seed-demo") || arguments.contains("--screenshots")
@@ -56,6 +65,8 @@ final class AppModel {
         }
         store = try Store(path: path, clock: clock)
         engine = TrackingEngine(store: store, clock: clock, settings: settings)
+        systemLoadSource = MachSystemLoadSource(clock: clock)
+        systemLoad = systemLoadSource.sample()
 
         if isDemo {
             try DemoData.seed(store: store, clock: clock)
@@ -79,6 +90,7 @@ final class AppModel {
                 guard let self else { return }
                 self.engine.tick()
                 self.engine.checkIdle(systemIdleSeconds: Self.systemIdleSeconds())
+                self.sampleSystemLoad()
             }
         }
         timer.tolerance = 0.2
@@ -100,6 +112,15 @@ final class AppModel {
                 }
             }
         }
+    }
+
+    /// Primes the processor counters at launch so the first popup is not reporting 0 %,
+    /// and refreshes everything on each heartbeat after that.
+    func sampleSystemLoad() {
+        let sample = systemLoadSource.sample()
+        guard sample != systemLoad else { return }
+        systemLoad = sample
+        onSystemLoad?(sample)
     }
 
     func shutDown() {
