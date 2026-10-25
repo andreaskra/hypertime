@@ -5,6 +5,8 @@ assumptions (A-xx), component specs, and the phase plan with acceptance checklis
 `docs/DESIGN_BRIEF.md` describes the design handoff that Phase 2 consumes.
 `docs/DECISIONS.md` records every decision that refines or deviates from the plan.
 `docs/PLAN-PHASE4-TASKS.md` is the tasks contract (built).
+`docs/PLAN-TIMELINE.md` is the backlog item for the 24-hour timeline (not started; it needs
+answers to its §8 before any code).
 
 Status: **Phases 0–4 complete.** The design handoff lives in `docs/design-handoff/handoff/`
 (`tokens.json`, `HANDOFF.md`, SVG assets). What is still open is listed at the bottom of
