@@ -37,15 +37,22 @@ public struct TimelineBucket: Identifiable, Hashable, Sendable {
     public var dominant: Slice? { parts.first }
     public var seconds: Seconds { parts.reduce(0) { $0 + $1.seconds } }
     public var isMixed: Bool { parts.count > 1 }
+
+    /// Any idle at all in this bracket, dominant or not. At half-hour brackets the dominance
+    /// rule alone would swallow exactly the stretches the strip exists to surface.
+    public var hasIdle: Bool { parts.contains { $0.kind == .idle } }
 }
 
 /// Turns slices into the row of marks the strip draws (TL-01 … TL-04).
 public enum Timeline {
 
-    /// Ten minutes (TLD-03). The coarsest bracket at which one default idle timeout fills a
-    /// whole mark, which is the question the strip exists to answer. Anything coarser loses a
-    /// single idle stretch inside a tracked one and answers a question nobody asked.
-    public static let grain: TimeInterval = 600
+    /// Half an hour (TLD-03, revised). Ten minutes made marks too fine to read at the popup's
+    /// width; thirty gives marks three times wider and a day that reads at a glance.
+    ///
+    /// The cost is real and is paid elsewhere: a ten-minute idle stretch no longer wins its
+    /// bracket, so it would vanish behind the work around it. `TimelineBucket.hasIdle` is why
+    /// it does not — any bracket containing idle is outlined, whoever won it.
+    public static let grain: TimeInterval = 1800
 
     /// How far back the strip reaches.
     public static let window: TimeInterval = 24 * 3600

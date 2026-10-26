@@ -210,3 +210,157 @@ struct ReportsPerformanceTests {
         #expect(elapsed < 0.05, "year report took \(elapsed)s")
     }
 }
+
+@MainActor
+@Suite("Hardening — relaunch")
+struct RelaunchTests {
+    let clock = TestClock()
+    let store: Store
+    let settings: Settings
+    let project: Project
+
+    init() throws {
+        clock.set(year: 2026, month: 10, day: 26, hour: 9)
+        store = try Store.inMemory(clock: clock)
+        settings = Settings.ephemeral()
+        project = try store.findOrCreateProject(named: "Alpha")
+    }
+
+    private var today: LocalDate { LocalDate(clock.now(), calendar: clock.calendar) }
+
+    /// One launch, some ticking, then the process dies without a clean shutdown — which is
+    /// what `pkill` during development, a crash, or a forced quit all look like.
+    private func launchTickAndDie(seconds: Int) {
+        let engine = TrackingEngine(store: store, clock: clock, settings: settings)
+        engine.restore()
+        for _ in 0..<seconds { clock.advance(by: 1); engine.tick() }
+        engine.flush()                              // the 15 s persist that would have happened
+    }
+
+    @Test("a kill and relaunch books the time that passed, not the time that passed twice")
+    func relaunchDoesNotDoubleBook() throws {
+        settings.startTrackingOnLaunch = true
+        let first = TrackingEngine(store: store, clock: clock, settings: settings)
+        first.start(projectID: project.id)
+        for _ in 0..<60 { clock.advance(by: 1); first.tick() }
+        first.flush()
+
+        // Ten relaunches, a minute of work each: eleven minutes in all.
+        for _ in 0..<10 { launchTickAndDie(seconds: 60) }
+
+        let banked = try store.seconds(project: project.id, day: today)
+        #expect(banked <= 11 * 60,
+                "eleven minutes of clock produced \(banked) s on the project")
+    }
+
+    @Test("relaunching without working books nothing at all")
+    func idleRelaunchesBookNothing() throws {
+        settings.startTrackingOnLaunch = true
+        let first = TrackingEngine(store: store, clock: clock, settings: settings)
+        first.start(projectID: project.id)
+        for _ in 0..<300 { clock.advance(by: 1); first.tick() }
+        first.flush()
+
+        // The bucket is recovered once, and then relaunching changes nothing.
+        launchTickAndDie(seconds: 0)
+        let afterFirst = try store.seconds(project: project.id, day: today)
+        for _ in 0..<5 { launchTickAndDie(seconds: 0) }
+        let afterMore = try store.seconds(project: project.id, day: today)
+        #expect(afterFirst == 300, "the crashed bucket is recovered once: \(afterFirst)")
+        #expect(afterMore == afterFirst,
+                "and never again: \(afterFirst) s became \(afterMore) s over five more launches")
+    }
+
+    @Test("repeated check-ins book the time since the last one, not since the morning")
+    func repeatedCommitsDoNotCompound() throws {
+        let engine = TrackingEngine(store: store, clock: clock, settings: settings)
+        engine.start(projectID: project.id)
+
+        var deltas: [Seconds] = []
+        var previous = 0
+        for _ in 0..<6 {
+            for _ in 0..<90 { clock.advance(by: 1); engine.tick() }
+            let shown = engine.pendingSeconds                 // what the popup offers
+            engine.commit(projectID: project.id, seconds: shown)
+            let banked = try store.seconds(project: project.id, day: today)
+            deltas.append(banked - previous)
+            previous = banked
+        }
+
+        #expect(deltas.allSatisfy { $0 <= 95 },
+                "each check-in should book about ninety seconds, got \(deltas)")
+        #expect(previous <= 6 * 95, "six checkins of ninety seconds became \(previous) s")
+    }
+
+    @Test("a check-in resets the amount the popup is offering")
+    func commitClearsTheBucket() {
+        let engine = TrackingEngine(store: store, clock: clock, settings: settings)
+        engine.start(projectID: project.id)
+        for _ in 0..<120 { clock.advance(by: 1); engine.tick() }
+        #expect(engine.pendingSeconds == 120)
+        engine.commit(projectID: project.id, seconds: engine.pendingSeconds)
+        #expect(engine.pendingSeconds == 0, "still offering \(engine.pendingSeconds) s after a commit")
+    }
+
+    @Test("a bucket recovered once is never recovered again, however many readers there are")
+    func recoveryIsIdempotent() throws {
+        settings.startTrackingOnLaunch = false
+        let first = TrackingEngine(store: store, clock: clock, settings: settings)
+        first.start(projectID: project.id)
+        for _ in 0..<300 { clock.advance(by: 1); first.tick() }
+        first.flush()
+
+        // Three engines open the same database without the first one ever tidying up, which
+        // is what a second instance looks like from the database's side.
+        for _ in 0..<3 {
+            let other = TrackingEngine(store: store, clock: clock, settings: settings)
+            other.restore()
+        }
+        let banked = try store.seconds(project: project.id, day: today)
+        #expect(banked == 300, "the crashed five minutes were booked \(banked / 300) times over")
+    }
+
+    @Test("a bucket holding more seconds than the span it covers is capped at the span")
+    func recoveryIsCappedAtItsOwnSpan() throws {
+        settings.startTrackingOnLaunch = false
+        var state = PersistedEngineState()
+        state.kind = .tracking
+        state.currentProjectID = project.id
+        state.pendingProjectID = project.id
+        state.pendingSince = clock.now().addingTimeInterval(-600)
+        state.lastTickAt = clock.now()
+        state.pendingSeconds = 30_000                      // nine hours inside a ten-minute span
+        state.lastCommitAt = state.pendingSince
+        try store.saveEngineState(state)
+
+        let engine = TrackingEngine(store: store, clock: clock, settings: settings)
+        engine.restore()
+        let banked = try store.seconds(project: project.id, day: today)
+        #expect(banked == 600, "ten minutes of clock recovered as \(banked) s")
+    }
+
+    /// What went wrong in the field, reproduced: a live engine ticking while something else
+    /// keeps opening the same database and recovering its bucket. Each recovery books the
+    /// whole bucket again, so ten minutes of clock becomes the sum of every reading of it.
+    /// Nothing inside the engine can fix this — a dead instance and a live one look identical
+    /// from the database — which is why `Store` takes an exclusive lock and the app refuses
+    /// to be the second copy. This test exists to state the failure, not to pass by accident.
+    @Test("the shape of the double-booking a second instance causes")
+    func concurrentInstancesCompound() throws {
+        settings.startTrackingOnLaunch = false
+        let live = TrackingEngine(store: store, clock: clock, settings: settings)
+        live.start(projectID: project.id)
+
+        for _ in 0..<5 {
+            for _ in 0..<60 { clock.advance(by: 1); live.tick() }
+            live.flush()
+            let second = TrackingEngine(store: store, clock: clock, settings: settings)
+            second.restore()
+        }
+
+        let banked = try store.seconds(project: project.id, day: today)
+        let elapsed = 5 * 60
+        #expect(banked > elapsed,
+                "the point of the lock is that this cannot happen in the app: \(banked) s booked for \(elapsed) s of clock")
+    }
+}

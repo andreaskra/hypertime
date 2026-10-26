@@ -288,19 +288,20 @@ enum Tokens {
         /// changing height under the cursor.
         static let height: CGFloat = 22
         static let markHeight: CGFloat = 10
-        /// 348 pt of content over 144 brackets is a 2.4 pt pitch; the mark takes most of it
-        /// and the rest is the gap.
-        static let markWidth: CGFloat = 1.8
+        /// 348 pt of content over 48 half-hour brackets is a 7.25 pt pitch; the mark takes
+        /// most of it and the rest is the gap.
+        static let markWidth: CGFloat = 5
         static let trackHeight: CGFloat = 1
         /// How much wider the mark under the cursor gets, and how far the bulge reaches.
         /// Kept modest on purpose: past about 1.5 the magnified marks overlap their
         /// neighbours into a single blob and the bulge stops reading as marks at all.
         /// Height is the dimension with room to grow, so height does most of the work.
-        static let widthGain: CGFloat = 1.5
-        static let magnifyRadius = 6
+        static let widthGain: CGFloat = 1.4
+        /// ±2 hours at half-hour brackets.
+        static let magnifyRadius = 4
         static let tick: CGFloat = 3
         static let tickTall: CGFloat = 6
-        static let tickEveryHours = 3
+        static let tickEveryHours = 6
         static let captionGap: CGFloat = 3
     }
 

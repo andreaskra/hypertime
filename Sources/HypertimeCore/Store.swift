@@ -82,6 +82,12 @@ public final class Store: @unchecked Sendable {
 
     // MARK: - Lifecycle
 
+    /// False when another process already has this database open (see `takeLock`).
+    public private(set) var isExclusive = true
+    /// Held for the life of the process; the kernel releases it on exit, so a crash cannot
+    /// leave a stale lock behind.
+    private var lockDescriptor: Int32 = -1
+
     public init(path: String, clock: Clock, recoverFromCorruption: Bool = true) throws {
         self.path = path
         self.clock = clock
@@ -90,6 +96,9 @@ public final class Store: @unchecked Sendable {
             if !directory.isEmpty {
                 try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
             }
+            let lock = Self.takeLock(path: path)
+            isExclusive = lock.held
+            lockDescriptor = lock.descriptor
         }
         var config = Configuration()
         config.foreignKeysEnabled = true
@@ -102,6 +111,24 @@ public final class Store: @unchecked Sendable {
             self.recoveredFromCorruption = Self.quarantine(path: path, clock: clock)
             self.dbQueue = try Self.open(path: path, config: config)
         }
+    }
+
+    /// SQLite makes concurrent *statements* safe; it does nothing about two tracking engines.
+    /// Two of those sharing one database both accrue to the same project, both persist their
+    /// own bucket over each other's, and each new launch recovers whatever the other one last
+    /// wrote — which books the same stretch of time again and again. An advisory lock on a
+    /// file beside the database is how a second instance finds out it is the second instance.
+    ///
+    /// The lock is held for the life of the process and released when it exits, by the kernel,
+    /// so a crash cannot leave a stale lock behind.
+    private static func takeLock(path: String) -> (held: Bool, descriptor: Int32) {
+        let descriptor = Darwin.open(path + ".lock", O_CREAT | O_RDWR, 0o644)
+        guard descriptor >= 0 else { return (true, -1) }    // cannot lock: do not refuse to run
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            Darwin.close(descriptor)
+            return (false, -1)
+        }
+        return (true, descriptor)
     }
 
     private static func open(path: String, config: Configuration) throws -> DatabaseQueue {

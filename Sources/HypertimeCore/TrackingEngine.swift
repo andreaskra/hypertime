@@ -561,11 +561,29 @@ public final class TrackingEngine {
         lastCheckInShownAt = state.lastCheckInAt
 
         // A crash left tracking state behind: recover the persisted bucket into its own day.
+        //
+        // Cleared in the same breath as it is recovered, and never recovered twice. The clear
+        // used to happen several statements later, by way of the persist inside `start()` —
+        // long enough for anything else reading this database to recover the same bucket
+        // again, which books the same stretch of time twice.
         if let seconds = state.pendingSeconds, seconds > 0,
            let projectID = state.pendingProjectID ?? state.currentProjectID {
             let day = LocalDate(state.lastTickAt ?? state.pendingSince ?? clock.now(), calendar: clock.calendar)
-            _ = try? store.addSeconds(project: projectID, day: day, seconds)
-            broadcaster.send(.dataChanged)
+            // A bucket can never hold more seconds than the span it covers; if it does, it has
+            // been counted more than once already and the span is the honest figure.
+            var recovered = seconds
+            if let since = state.pendingSince, let until = state.lastTickAt {
+                recovered = min(recovered, max(Int(until.timeIntervalSince(since)), 0))
+            }
+            var cleared = state
+            cleared.pendingSeconds = nil
+            cleared.pendingProjectID = nil
+            cleared.pendingSince = nil
+            try? store.saveEngineState(cleared)
+            if recovered > 0 {
+                _ = try? store.addSeconds(project: projectID, day: day, recovered)
+                broadcaster.send(.dataChanged)
+            }
         }
 
         pending = nil

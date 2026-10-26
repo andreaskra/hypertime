@@ -62,6 +62,7 @@ enum SelfTest {
         checkTaskClockRuns(panel, model)
         checkSystemLoad(panel, model)
         checkTimeline(panel, model)
+        checkDatabaseLock()
 
         // Opening by hand while another app holds the keyboard: losing key status in the first
         // moments must make the panel insist, not dismiss itself.
@@ -747,6 +748,51 @@ enum SelfTest {
         panel.hide()
     }
 
+    /// The guard that actually prevents the double-booking: a second process cannot open the
+    /// same database. An advisory lock is re-entrant inside one process, so this has to be a
+    /// real second process holding it.
+    private static func checkDatabaseLock() {
+        let path = NSTemporaryDirectory() + "hypertime-lock-\(UUID().uuidString).sqlite"
+        defer {
+            try? FileManager.default.removeItem(atPath: path)
+            try? FileManager.default.removeItem(atPath: path + ".lock")
+        }
+
+        let holder = Process()
+        holder.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        holder.arguments = ["-I", "-c", """
+import fcntl, sys, time
+f = open(sys.argv[1], 'w')
+fcntl.flock(f, fcntl.LOCK_EX)
+print('held', flush=True)
+time.sleep(5)
+""", path + ".lock"]
+        let pipe = Pipe()
+        holder.standardOutput = pipe
+        do {
+            try holder.run()
+        } catch {
+            note("database lock not measured: \(error.localizedDescription)")
+            return
+        }
+        defer { holder.terminate() }
+
+        // Wait for the child to say it has the lock before racing it.
+        let deadline = Date().addingTimeInterval(5)
+        var held = false
+        while Date() < deadline, !held {
+            if let line = try? pipe.fileHandleForReading.read(upToCount: 5), !line.isEmpty { held = true }
+        }
+        guard held else {
+            note("database lock not measured: the holder never took it")
+            return
+        }
+
+        let store = try? Store(path: path, clock: AppClock(settings: .ephemeral()))
+        check("a database another process holds is not opened exclusively",
+              store?.isExclusive == false, "\(store?.isExclusive.description ?? "no store")")
+    }
+
     /// The timeline strip: that the day the engine recorded is the day the strip shows, that
     /// idle survives as idle, and that the caption names what is under the cursor.
     private static func checkTimeline(_ panel: CheckInPanelController, _ model: AppModel) {
@@ -759,17 +805,26 @@ enum SelfTest {
             return
         }
 
-        // Half an hour of work, ten minutes of which was nobody there.
+        // Three brackets of work, the middle one entirely nobody there, and a fourth where
+        // ten idle minutes hide behind twenty of work.
         model.engine.start(projectID: project.id)
         let now = model.clock.now()
-        for offset in stride(from: 1800, through: 600, by: -600) {
-            try? model.store.addSlice(bucketStart: now.addingTimeInterval(-Double(offset)),
-                                      kind: .tracked, project: project.id, 600)
+        let grain = Int(Timeline.grain)
+        let offsets = (1...4).map { Double($0 * grain) }
+        for offset in offsets {
+            try? model.store.addSlice(bucketStart: now.addingTimeInterval(-offset),
+                                      kind: .tracked, project: project.id, grain)
         }
-        try? model.store.addSlice(bucketStart: now.addingTimeInterval(-1200),
-                                  kind: .idle, project: nil, 600)
-        try? model.store.addSlice(bucketStart: now.addingTimeInterval(-1200),
-                                  kind: .tracked, project: project.id, -600)
+        // The middle bracket turns out to have been idle all along.
+        try? model.store.addSlice(bucketStart: now.addingTimeInterval(-offsets[2]),
+                                  kind: .tracked, project: project.id, -grain)
+        try? model.store.addSlice(bucketStart: now.addingTimeInterval(-offsets[2]),
+                                  kind: .idle, project: nil, grain)
+        // …and the newest one holds a third of an hour of idle it would otherwise swallow.
+        try? model.store.addSlice(bucketStart: now.addingTimeInterval(-offsets[0]),
+                                  kind: .tracked, project: project.id, -grain / 3)
+        try? model.store.addSlice(bucketStart: now.addingTimeInterval(-offsets[0]),
+                                  kind: .idle, project: nil, grain / 3)
         viewModel.refreshTimeline()
 
         check("the strip is a full day of brackets", viewModel.timeline.count == Timeline.bucketCount,
@@ -777,13 +832,19 @@ enum SelfTest {
         // The engine is running as this check runs, so it writes a bracket of its own; what
         // matters is that everything put there is there, not that nothing else is.
         let filled = viewModel.timeline.filter { !$0.isEmpty }
-        let seeded = [1800, 1200, 600].map { Timeline.bucketStart(for: now.addingTimeInterval(-Double($0))) }
+        let seeded = offsets.map { Timeline.bucketStart(for: now.addingTimeInterval(-$0)) }
         check("…with what was recorded on it",
               seeded.allSatisfy { start in filled.contains { $0.start == start } },
               "\(filled.count) brackets filled")
         check("…and the idle stretch kept as idle, not as work",
               filled.contains { $0.dominant?.kind == .idle },
               filled.compactMap { $0.dominant?.kind.rawValue }.joined(separator: ", "))
+        // Half-hour brackets are wide enough to hide a short idle stretch behind the work
+        // around it, which is the one thing this strip must not do.
+        let mostlyWorked = viewModel.timeline.first { $0.start == seeded[0] }
+        check("…and idle inside a mostly-worked bracket is still flagged",
+              mostlyWorked?.dominant?.kind == .tracked && mostlyWorked?.hasIdle == true,
+              "\(mostlyWorked?.dominant?.kind.rawValue ?? "none"), hasIdle \(mostlyWorked?.hasIdle ?? false)")
 
         // A project's colour is its own, not its rank in whatever is on screen (TLD-07).
         let slot = viewModel.colorSlot(for: project.id)

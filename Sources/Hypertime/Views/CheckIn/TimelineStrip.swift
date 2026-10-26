@@ -94,6 +94,7 @@ struct TimelineStrip: View {
         let tickInk = Tokens.Palette.separator.color
         let fills = buckets.map { fill($0.dominant) }
         let kinds = buckets.map { $0.dominant?.kind }
+        let idling = buckets.map(\.hasIdle)
         let ticks = hourMarks()
 
         return Canvas { context, size in
@@ -129,6 +130,11 @@ struct TimelineStrip: View {
                     context.fill(path, with: .color(pausedInk))
                 default:
                     context.fill(path, with: .color(fills[index]))
+                    // Half an hour is wide enough to hide a ten-minute idle stretch behind the
+                    // work either side of it. Outlined means "there is idle in here".
+                    if idling[index] {
+                        context.stroke(path, with: .color(idleInk), lineWidth: Tokens.Focus.borderWidth)
+                    }
                 }
             }
 

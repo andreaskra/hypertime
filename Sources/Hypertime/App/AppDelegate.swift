@@ -54,6 +54,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             return
         }
 
+        // Two tracking engines on one database book the same time twice over, so the second
+        // instance says so and leaves rather than quietly doubling the day.
+        guard model.store.isExclusive else {
+            let alert = NSAlert()
+            alert.messageText = "Hypertime is already running."
+            alert.informativeText = "Another copy of Hypertime has this database open. "
+                + "Only one can track time at a time, so this one will close."
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
+
         activation = ActivationController()
         activation.applyActivationPolicy(showInDock: model.settings.showInDockAndCmdTab)
         MainMenu.install(target: self)

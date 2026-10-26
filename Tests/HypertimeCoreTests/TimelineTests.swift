@@ -32,16 +32,29 @@ struct TimelineTests {
 
     // MARK: - Brackets
 
-    @Test("the window is a day of ten-minute brackets")
+    @Test("the window is a day of half-hour brackets")
     func grain() {
-        #expect(Timeline.grain == 600)
-        #expect(Timeline.bucketCount == 144)
+        #expect(Timeline.grain == 1800)
+        #expect(Timeline.bucketCount == 48)
         // A bracket starts on its own boundary whatever moment inside it you ask about.
         let start = Timeline.bucketStart(for: Date(timeIntervalSince1970: 1_000_000_123))
-        #expect(start.timeIntervalSince1970.truncatingRemainder(dividingBy: 600) == 0)
+        #expect(start.timeIntervalSince1970.truncatingRemainder(dividingBy: 1800) == 0)
         #expect(Timeline.bucketStart(for: start) == start)
-        #expect(Timeline.bucketStart(for: start.addingTimeInterval(599)) == start)
-        #expect(Timeline.bucketStart(for: start.addingTimeInterval(600)) != start)
+        #expect(Timeline.bucketStart(for: start.addingTimeInterval(1799)) == start)
+        #expect(Timeline.bucketStart(for: start.addingTimeInterval(1800)) != start)
+    }
+
+    @Test("a bracket that hides idle behind a majority of work still says so")
+    func idleSurvivesDominance() {
+        let now = clock.now()
+        let bucket = Timeline.bucketStart(for: now.addingTimeInterval(-3600))
+        let parts = [
+            Slice(bucketStart: bucket, kind: .tracked, projectID: alpha.id, seconds: 1200),
+            Slice(bucketStart: bucket, kind: .idle, projectID: nil, seconds: 600),
+        ]
+        let mark = Timeline.buckets(from: parts, now: now).first { !$0.isEmpty }
+        #expect(mark?.dominant?.kind == .tracked, "twenty minutes of work wins a half hour")
+        #expect(mark?.hasIdle == true, "…but the ten idle minutes inside it are not swallowed")
     }
 
     @Test("the strip is always a full day wide, known or not")
@@ -84,6 +97,7 @@ struct TimelineTests {
         #expect(mark?.dominant?.kind == .idle, "idle wins a bracket it is the biggest part of (TLA-04)")
         #expect(mark?.isMixed == true)
         #expect(mark?.seconds == 600)
+        #expect(mark?.hasIdle == true)
         // Every part survives for the hover readout, biggest first.
         #expect(mark?.parts.map(\.seconds) == [400, 120, 80])
     }
