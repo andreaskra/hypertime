@@ -43,24 +43,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        do {
-            model = try AppModel()
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Hypertime could not open its database."
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-            NSApp.terminate(nil)
-            return
+        // Before the database is touched: rendering an icon needs no model, and opening the
+        // real database for it would fail whenever the app is already running.
+        if let index = CommandLine.arguments.firstIndex(of: "--render-icon"),
+           index + 2 < CommandLine.arguments.count {
+            exit(IconRenderer.run(source: CommandLine.arguments[index + 2],
+                                  into: CommandLine.arguments[index + 1]) ? 0 : 1)
         }
 
-        // Two tracking engines on one database book the same time twice over, so the second
-        // instance says so and leaves rather than quietly doubling the day.
-        guard model.store.isExclusive else {
+        do {
+            model = try AppModel()
+        } catch StoreError.alreadyOpen {
+            // Two tracking engines on one database book the same time twice over. The store
+            // refuses to open at all, so nothing has been restored and nothing written.
             let alert = NSAlert()
             alert.messageText = "Hypertime is already running."
             alert.informativeText = "Another copy of Hypertime has this database open. "
                 + "Only one can track time at a time, so this one will close."
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Hypertime could not open its database."
+            alert.informativeText = error.localizedDescription
             alert.runModal()
             NSApp.terminate(nil)
             return
@@ -86,12 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         Log.app.notice("Status item ready \(total, format: .fixed(precision: 0)) ms after launch, \(setUp, format: .fixed(precision: 0)) ms of it after main()")
         if let quarantined = model.store.recoveredFromCorruption {
             reportDatabaseRecovery(quarantined)
-        }
-
-        if let index = CommandLine.arguments.firstIndex(of: "--render-icon"),
-           index + 2 < CommandLine.arguments.count {
-            exit(IconRenderer.run(source: CommandLine.arguments[index + 2],
-                                  into: CommandLine.arguments[index + 1]) ? 0 : 1)
         }
 
         if let index = CommandLine.arguments.firstIndex(of: "--screenshots"),

@@ -788,9 +788,17 @@ time.sleep(5)
             return
         }
 
-        let store = try? Store(path: path, clock: AppClock(settings: .ephemeral()))
-        check("a database another process holds is not opened exclusively",
-              store?.isExclusive == false, "\(store?.isExclusive.description ?? "no store")")
+        // It must refuse to open, not open and report it: a store handed back would be
+        // restored from, and restoring is what books the time twice.
+        var refused = false
+        do {
+            _ = try Store(path: path, clock: AppClock(settings: .ephemeral()))
+        } catch StoreError.alreadyOpen {
+            refused = true
+        } catch {
+            note("database lock: unexpected error \(error)")
+        }
+        check("a database another process holds refuses to open at all", refused)
     }
 
     /// The timeline strip: that the day the engine recorded is the day the strip shows, that

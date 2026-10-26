@@ -5,6 +5,10 @@ public enum StoreError: Error, Equatable, Sendable {
     case emptyName
     case duplicateName(String)
     case notFound
+    /// Another process already has this database open. Thrown from `init`, deliberately: a
+    /// caller that got a `Store` back would restore the engine from it, and restoring is what
+    /// books the time twice.
+    case alreadyOpen
 }
 
 /// Longest project name we store. Anything longer is truncated on the way in, so a stray paste
@@ -99,6 +103,10 @@ public final class Store: @unchecked Sendable {
             let lock = Self.takeLock(path: path)
             isExclusive = lock.held
             lockDescriptor = lock.descriptor
+            // Refused here rather than reported afterwards. A `Store` handed back to a caller
+            // that then restores the engine has already done the damage: recovery writes the
+            // crashed bucket the moment it runs, long before anyone can check a flag.
+            guard isExclusive else { throw StoreError.alreadyOpen }
         }
         var config = Configuration()
         config.foreignKeysEnabled = true
