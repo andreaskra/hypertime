@@ -16,6 +16,7 @@ public enum StoreChange: String, Sendable, Hashable, CaseIterable {
     case entries
     case engineState
     case tasks
+    case slices
 }
 
 /// Engine state persisted across launches and crashes (§5.5).
@@ -199,6 +200,28 @@ public final class Store: @unchecked Sendable {
                 CREATE INDEX task_entry_day ON task_entry(day);
                 """)
         }
+        migrator.registerMigration("v3-timeline") { db in
+            try db.execute(sql: """
+                CREATE TABLE slice (
+                  bucket_start  REAL NOT NULL,
+                  kind          TEXT NOT NULL,
+                  project_id    TEXT REFERENCES project(id) ON DELETE CASCADE,
+                  seconds       INTEGER NOT NULL DEFAULT 0 CHECK (seconds >= 0 AND seconds <= 86400)
+                );
+                -- Idle and paused slices have no project, and SQLite treats NULLs in a unique
+                -- index as distinct — so the key folds NULL to a sentinel rather than storing
+                -- one, which would be a foreign key violation against project(id).
+                CREATE UNIQUE INDEX slice_key ON slice(bucket_start, kind, COALESCE(project_id, ''));
+                CREATE INDEX slice_bucket ON slice(bucket_start);
+                ALTER TABLE project ADD COLUMN color_slot INTEGER;
+                """)
+            // Existing projects keep the colours they have been drawn in for as long as the
+            // chart has existed, which is the order they were created in.
+            let ids = try String.fetchAll(db, sql: "SELECT id FROM project ORDER BY created_at ASC, name ASC")
+            for (slot, id) in ids.enumerated() {
+                try db.execute(sql: "UPDATE project SET color_slot = ? WHERE id = ?", arguments: [slot, id])
+            }
+        }
         return migrator
     }
 
@@ -251,11 +274,21 @@ public final class Store: @unchecked Sendable {
         guard !trimmed.isEmpty else { throw StoreError.emptyName }
         if let existing = try project(named: trimmed) { return existing }
 
-        let project = Project(name: trimmed, createdAt: clock.now())
+        var project = Project(name: trimmed, createdAt: clock.now())
         try write(.projects) { db in
+            // Lowest free slot, so deleting a project frees its colour for the next one rather
+            // than marching the palette off its end.
+            let taken = Set(try Int.fetchAll(db, sql: "SELECT color_slot FROM project WHERE color_slot IS NOT NULL"))
+            var slot = 0
+            while taken.contains(slot) { slot += 1 }
+            project.colorSlot = slot
             do {
-                try db.execute(sql: "INSERT INTO project (id, name, created_at, last_used_at, archived) VALUES (?, ?, ?, NULL, 0)",
-                               arguments: [project.id.uuidString, project.name, project.createdAt.timeIntervalSince1970])
+                try db.execute(sql: """
+                    INSERT INTO project (id, name, created_at, last_used_at, archived, color_slot)
+                    VALUES (?, ?, ?, NULL, 0, ?)
+                    """,
+                    arguments: [project.id.uuidString, project.name,
+                                project.createdAt.timeIntervalSince1970, slot])
             } catch let error as DatabaseError where error.resultCode == .SQLITE_CONSTRAINT {
                 throw StoreError.duplicateName(trimmed)
             }
@@ -605,6 +638,86 @@ public final class Store: @unchecked Sendable {
 
     /// Drops change-log rows older than 90 days. Called shortly after launch rather than during
     /// `init`, so a write transaction never sits between the user and the status item.
+    // MARK: - Timeline slices (TL-01)
+
+    /// Adds seconds to one bracket. Called on the flush the engine already does, so the
+    /// timeline costs a write path rather than a timer.
+    /// Negative deltas are allowed and clamp at zero: time that turns out to have been idle
+    /// is taken back out of whatever it was first counted as (TLA-10).
+    public func addSlice(bucketStart: Date, kind: SliceKind, project: UUID?, _ delta: Seconds) throws {
+        guard delta != 0 else { return }
+        let start = Timeline.bucketStart(for: bucketStart).timeIntervalSince1970
+        try write(.slices) { db in
+            // Update first, insert only if there was nothing to update. An upsert cannot do
+            // this: `excluded.seconds` carries the value that would have been inserted, so a
+            // negative delta clamped on the way in adds nothing on the way through.
+            try db.execute(sql: """
+                UPDATE slice SET seconds = max(min(seconds + ?, 86400), 0)
+                WHERE bucket_start = ? AND kind = ? AND project_id IS ?
+                """,
+                arguments: [delta, start, kind.rawValue, project?.uuidString])
+            // Nothing to take time away from is not an error; it is just nothing.
+            guard db.changesCount == 0, delta > 0 else { return }
+            try db.execute(
+                sql: "INSERT INTO slice (bucket_start, kind, project_id, seconds) VALUES (?, ?, ?, ?)",
+                arguments: [start, kind.rawValue, project?.uuidString, min(delta, secondsPerDay)])
+        }
+    }
+
+    /// Reassigns tracked time in a span to the project it was finally confirmed against, so
+    /// the strip agrees with the day list (TLD-08).
+    public func reassignSlices(from: Date, to: Date, project: UUID) throws {
+        let lower = Timeline.bucketStart(for: from).timeIntervalSince1970
+        let upper = Timeline.bucketStart(for: to).timeIntervalSince1970
+        try write(.slices) { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT bucket_start, seconds FROM slice
+                WHERE kind = ? AND bucket_start >= ? AND bucket_start <= ? AND project_id <> ?
+                """, arguments: [SliceKind.tracked.rawValue, lower, upper, project.uuidString])
+            guard !rows.isEmpty else { return }
+            try db.execute(sql: """
+                DELETE FROM slice
+                WHERE kind = ? AND bucket_start >= ? AND bucket_start <= ? AND project_id <> ?
+                """, arguments: [SliceKind.tracked.rawValue, lower, upper, project.uuidString])
+            for row in rows {
+                try db.execute(sql: """
+                    INSERT INTO slice (bucket_start, kind, project_id, seconds) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(bucket_start, kind, COALESCE(project_id, ''))
+                    DO UPDATE SET seconds = min(seconds + excluded.seconds, 86400)
+                    """,
+                    arguments: [row["bucket_start"] as Double, SliceKind.tracked.rawValue,
+                                project.uuidString, row["seconds"] as Int])
+            }
+        }
+    }
+
+    /// Rows with nothing left in them are not marks; dropping them keeps `isEmpty` honest
+    /// after a stretch has been repainted.
+    public func slices(from: Date, to: Date) throws -> [Slice] {
+        try dbQueue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT * FROM slice
+                WHERE bucket_start >= ? AND bucket_start <= ? AND seconds > 0
+                ORDER BY bucket_start ASC
+                """, arguments: [from.timeIntervalSince1970, to.timeIntervalSince1970])
+                .map {
+                    Slice(bucketStart: Date(timeIntervalSince1970: $0["bucket_start"]),
+                          kind: SliceKind(rawValue: $0["kind"]) ?? .tracked,
+                          projectID: UUID(uuidString: $0["project_id"] ?? ""),
+                          seconds: $0["seconds"])
+                }
+        }
+    }
+
+    /// A week is kept though only a day is drawn (TLD-01): it is a thousand rows, and it
+    /// leaves the door open to the same strip over a longer window.
+    public func pruneSlices(olderThan days: Int = 7) throws {
+        let cutoff = clock.now().addingTimeInterval(-Double(days) * 86_400).timeIntervalSince1970
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM slice WHERE bucket_start < ?", arguments: [cutoff])
+        }
+    }
+
     public func pruneChangeLog(olderThan days: Int = 90) throws {
         let cutoff = clock.now().addingTimeInterval(-Double(days) * 86_400).timeIntervalSince1970
         try dbQueue.write { db in
@@ -640,7 +753,8 @@ public final class Store: @unchecked Sendable {
             name: row["name"],
             createdAt: Date(timeIntervalSince1970: row["created_at"]),
             lastUsedAt: (row["last_used_at"] as Double?).map(Date.init(timeIntervalSince1970:)),
-            isArchived: (row["archived"] as Int) != 0
+            isArchived: (row["archived"] as Int) != 0,
+            colorSlot: row["color_slot"] as Int?
         )
     }
 }

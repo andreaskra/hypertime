@@ -194,9 +194,12 @@ final class ReportsViewModel {
     // MARK: - Chart
 
     /// Slot for a project, or `Series.maxSlots` for everything past the eighth ("Other").
+    ///
+    /// The slot is the project's own, fixed when it was created (TLD-07), not its rank in
+    /// whatever period happens to be on screen. A colour that changes between a week and a
+    /// month is not a code for anything, and it cannot be shared with the popup's timeline.
     func slot(for project: UUID) -> Int {
-        guard let index = seriesOrder.firstIndex(of: project) else { return Tokens.Series.maxSlots }
-        return index < Tokens.Series.maxSlots ? index : Tokens.Series.maxSlots
+        model.colorSlot(for: project)
     }
 
     func isVisible(_ project: UUID) -> Bool { !hiddenProjects.contains(project) }

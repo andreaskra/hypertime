@@ -45,6 +45,7 @@ final class ReportsWindowController {
             self.window = window
         }
         activation.activate {
+            ActivationController.neutralise(window)
             window?.makeKeyAndOrderFront(nil)
         }
     }
@@ -85,6 +86,7 @@ final class SettingsWindowController {
             self.window = window
         }
         activation.activate {
+            ActivationController.neutralise(window)
             window?.makeKeyAndOrderFront(nil)
         }
     }
@@ -132,7 +134,11 @@ final class ExportController {
             activation.activate { host.beginSheet(window) { _ in } }
         } else {
             window.center()
-            activation.activate { window.makeKeyAndOrderFront(nil) }
+            if ActivationController.isHeadless {
+                ActivationController.present(window)
+            } else {
+                activation.activate { window.makeKeyAndOrderFront(nil) }
+            }
         }
     }
 

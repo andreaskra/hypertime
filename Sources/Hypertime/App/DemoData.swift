@@ -28,6 +28,45 @@ enum DemoData {
         for project in projects {
             try store.touchProject(id: project.id)
         }
+
+        try seedTimeline(store: store, clock: clock, projects: projects, generator: &generator)
+    }
+
+    /// A day's worth of brackets for the strip: stretches of work on one project at a time,
+    /// broken by the idle gaps the strip exists to show, and nothing at all overnight.
+    private static func seedTimeline(store: Store, clock: Clock, projects: [Project],
+                                     generator: inout SeededGenerator) throws {
+        let now = clock.now()
+        var cursor = Timeline.bucketStart(for: now.addingTimeInterval(-Timeline.window))
+        var project = projects[0]
+
+        while cursor < now {
+            let hour = clock.calendar.component(.hour, from: cursor)
+            // Asleep: the app was not running, so nothing is known rather than nothing happened.
+            guard hour >= 8, hour < 21 else {
+                cursor = cursor.addingTimeInterval(Timeline.grain)
+                continue
+            }
+            switch Int.random(in: 0...9, using: &generator) {
+            case 0...5:
+                try store.addSlice(bucketStart: cursor, kind: .tracked, project: project.id,
+                                   Int(Timeline.grain))
+            case 6...7:
+                try store.addSlice(bucketStart: cursor, kind: .idle, project: nil, Int(Timeline.grain))
+            case 8:
+                // A bracket where the work changed hands halfway.
+                let next = projects.randomElement(using: &generator) ?? project
+                try store.addSlice(bucketStart: cursor, kind: .tracked, project: project.id, 380)
+                try store.addSlice(bucketStart: cursor, kind: .tracked, project: next.id, 220)
+                project = next
+            default:
+                try store.addSlice(bucketStart: cursor, kind: .paused, project: nil, Int(Timeline.grain))
+            }
+            if Int.random(in: 0...6, using: &generator) == 0 {
+                project = projects.randomElement(using: &generator) ?? project
+            }
+            cursor = cursor.addingTimeInterval(Timeline.grain)
+        }
     }
 }
 

@@ -5,8 +5,7 @@ assumptions (A-xx), component specs, and the phase plan with acceptance checklis
 `docs/DESIGN_BRIEF.md` describes the design handoff that Phase 2 consumes.
 `docs/DECISIONS.md` records every decision that refines or deviates from the plan.
 `docs/PLAN-PHASE4-TASKS.md` is the tasks contract (built).
-`docs/PLAN-TIMELINE.md` is the backlog item for the 24-hour timeline (not started; it needs
-answers to its §8 before any code).
+`docs/PLAN-TIMELINE.md` is the 24-hour timeline contract (built).
 
 Status: **Phases 0–4 complete.** The design handoff lives in `docs/design-handoff/handoff/`
 (`tokens.json`, `HANDOFF.md`, SVG assets). What is still open is listed at the bottom of
@@ -26,7 +25,7 @@ artboard-drift pass (the artboards were not part of the handoff zip).
 ## Commands
 ```bash
 swift build
-swift test                              # 139 tests, swift-testing (import Testing)
+swift test                              # 165 tests, swift-testing (import Testing)
 swift test --enable-code-coverage
 scripts/build-app.sh                    # -> dist/Hypertime.app (ad-hoc signed)
 scripts/run.sh                          # kills running instance, builds, opens
@@ -40,6 +39,9 @@ dist/Hypertime.app/Contents/MacOS/Hypertime --render-icon <out> <appiconset>
 `--self-test` exercises the status item, panel positioning and focus behaviour, the commit
 flow, total editing, reports and CSV export against a throwaway database, then exits
 non-zero on the first failure. Run it after touching anything in `Sources/Hypertime`.
+It drives the real windows but never puts them on screen: the app does not activate, and its
+windows are transparent, ignore the mouse and take key status without being raised. It is
+safe to run while someone is working on the machine — and it must stay that way.
 
 ## Layout
 - `Sources/HypertimeCore` — Foundation-only library (§3 of the plan).

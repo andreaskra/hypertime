@@ -47,6 +47,12 @@ public struct SystemLoad: Equatable, Sendable {
 /// Where a reading comes from. The app uses `MachSystemLoadSource`; tests use their own.
 public protocol SystemLoadSource: AnyObject, Sendable {
     func sample() -> SystemLoad
+    /// Cheap counters only, for the launch path.
+    func prime()
+}
+
+public extension SystemLoadSource {
+    func prime() { _ = sample() }
 }
 
 /// CPU time is reported as a running total of ticks, so usage only exists between two reads.

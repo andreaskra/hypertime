@@ -42,6 +42,9 @@ public final class TrackingEngine {
     public private(set) var lastCheckInShownAt: Date?
     private var lastPersistAt: Date
     private var fraction: Double = 0
+    /// Sub-second carry for time the app spends paused or idle, which accrues to the timeline
+    /// but to no counter.
+    private var awayFraction: Double = 0
 
     public var events: AsyncStream<TrackingEvent> { broadcaster.stream }
 
@@ -127,6 +130,7 @@ public final class TrackingEngine {
     /// does not claim time that was accruing before it (TA-03).
     public func startTask(_ task: TaskItem) {
         flushTask()
+        flushSlice()
         activeTaskID = task.id
         taskProjectID = task.projectID
         taskBaselineSeconds = (try? store.taskSeconds(task: task.id)) ?? 0
@@ -145,6 +149,7 @@ public final class TrackingEngine {
     public func stopTask() {
         guard activeTaskID != nil else { return }
         flushTask()
+        flushSlice()
         activeTaskID = nil
         taskProjectID = nil
         taskAccruedSinceStart = 0
@@ -163,6 +168,7 @@ public final class TrackingEngine {
     /// Finishes the task and stops tracking it; its time stays where it was booked (T-04).
     public func finishTask(_ taskID: UUID) {
         if taskID == activeTaskID { flushTask() }
+        flushSlice()
         try? store.completeTask(id: taskID)
         if taskID == activeTaskID { stopTask() }
         broadcaster.send(.tasksChanged)
@@ -173,6 +179,8 @@ public final class TrackingEngine {
     public func taskDeleted(_ taskID: UUID) {
         if taskID == activeTaskID {
             flushTask()
+            flushSlice()
+        flushSlice()
             stopTask()
         }
         broadcaster.send(.tasksChanged)
@@ -191,6 +199,12 @@ public final class TrackingEngine {
         let now = clock.now()
         if seconds > 0 {
             _ = try? store.addSeconds(project: projectID, day: today, seconds)
+        }
+        // The bucket was accruing against whatever was current; confirming it somewhere else
+        // moves the marks with it, or the strip and the day list disagree (TLD-08).
+        flushSlice()
+        if let since = pending?.since ?? lastCommitAt as Date? {
+            try? store.reassignSlices(from: since, to: now, project: projectID)
         }
         try? store.touchProject(id: projectID)
         pending = nil
@@ -224,6 +238,7 @@ public final class TrackingEngine {
     public func pause(until: Date, reason: PauseReason) {
         guard let projectID = currentProjectID else { return }
         flushTask()
+        flushSlice()
         lastTickAt = clock.now()
         setStatus(.paused(projectID: projectID, until: until, reason: reason))
     }
@@ -258,6 +273,7 @@ public final class TrackingEngine {
     /// Flushes pending time and goes idle (quit, R-15).
     public func stop() {
         flushTask()
+        flushSlice()
         activeTaskID = nil
         taskProjectID = nil
         autoCommitPending()
@@ -286,7 +302,78 @@ public final class TrackingEngine {
 
         guard status.isTracking, systemIdleSeconds >= timeout else { return }
         rollBack(seconds: systemIdleSeconds)
+        // The stretch that was rolled back was not work, and the strip exists to say so: it is
+        // repainted idle across the brackets it actually spanned.
+        repaintIdle(seconds: systemIdleSeconds, endingAt: clock.now())
         pause(until: .distantFuture, reason: .idle)
+    }
+
+    /// Writes a past stretch as idle, bracket by bracket, taking the tracked seconds in each
+    /// back out as it goes. Without the subtraction a rolled-back ten minutes would show as
+    /// both worked and idle, which is the opposite of the point.
+    private func repaintIdle(seconds: Seconds, endingAt end: Date) {
+        guard seconds > 0 else { return }
+        flushSlice()
+        var remaining = seconds
+        var cursor = end
+        while remaining > 0 {
+            let bucket = Timeline.bucketStart(for: cursor)
+            let intoBucket = max(Int(cursor.timeIntervalSince(bucket)), 0)
+            let chunk = min(remaining, max(intoBucket, 1))
+            if let projectID = currentProjectID {
+                try? store.addSlice(bucketStart: bucket, kind: .tracked, project: projectID, -chunk)
+            }
+            try? store.addSlice(bucketStart: bucket, kind: .idle, project: nil, chunk)
+            remaining -= chunk
+            cursor = bucket.addingTimeInterval(-1)
+        }
+    }
+
+    /// One tick's worth of whatever the app is doing instead of working.
+    private func recordAway(_ delta: TimeInterval) {
+        guard delta > 0 else { return }
+        awayFraction += delta
+        let whole = Int(awayFraction)
+        guard whole > 0 else { return }
+        awayFraction -= Double(whole)
+        if case .paused(_, _, let reason) = status {
+            record(reason == .idle ? .idle : .paused, project: nil, seconds: whole)
+        }
+    }
+
+    /// Seconds waiting to be written as one slice. Writing each second as it is counted cost
+    /// a database round trip per tick, which the tick-cost test caught at once; a bracket's
+    /// worth of the same thing is one row either way.
+    private struct SliceBuffer {
+        var bucketStart: Date
+        var kind: SliceKind
+        var projectID: UUID?
+        var seconds: Seconds
+    }
+
+    private var sliceBuffer: SliceBuffer?
+
+    private func record(_ kind: SliceKind, project: UUID?, seconds: Seconds) {
+        guard seconds > 0 else { return }
+        let bucket = Timeline.bucketStart(for: clock.now())
+        if var buffer = sliceBuffer {
+            if buffer.bucketStart == bucket, buffer.kind == kind, buffer.projectID == project {
+                buffer.seconds += seconds
+                sliceBuffer = buffer
+                return
+            }
+            flushSlice()
+        }
+        sliceBuffer = SliceBuffer(bucketStart: bucket, kind: kind, projectID: project, seconds: seconds)
+    }
+
+    /// Writes the buffered slice. Anything that reads or rewrites slices has to call this
+    /// first, or it works from a picture that is a bracket out of date.
+    private func flushSlice() {
+        defer { sliceBuffer = nil }
+        guard let buffer = sliceBuffer, buffer.seconds > 0 else { return }
+        try? store.addSlice(bucketStart: buffer.bucketStart, kind: buffer.kind,
+                            project: buffer.projectID, buffer.seconds)
     }
 
     /// Removes time that turned out not to be work, from whichever counter took it.
@@ -318,7 +405,11 @@ public final class TrackingEngine {
             return
 
         case .paused(_, let until, _):
+            // Time spent away is the half of the record nothing else keeps, and it is the
+            // half the strip exists to show (TL-01).
+            let away = now.timeIntervalSince(lastTickAt)
             lastTickAt = now
+            if away > 0, away <= TimeInterval(settings.maxGapSeconds) { recordAway(away) }
             if now >= until {
                 resume()
                 broadcaster.send(.pauseEnded)
@@ -336,6 +427,7 @@ public final class TrackingEngine {
         if delta < 0 || delta > maxGap {
             lastTickAt = now
             fraction = 0
+            awayFraction = 0
             persist(force: true)
             broadcaster.send(.tick(pending))
             return
@@ -371,6 +463,8 @@ public final class TrackingEngine {
 
         if now.timeIntervalSince(lastPersistAt) >= TimeInterval(settings.flushIntervalSeconds) {
             flushTask()
+            flushSlice()
+        flushSlice()
             persist(force: true)
         }
         broadcaster.send(.tick(pending))
@@ -387,6 +481,7 @@ public final class TrackingEngine {
             fraction -= Double(whole)
             let updated = min((pending?.seconds ?? 0) + whole, secondsPerDay)
             pending?.seconds = updated
+            record(.tracked, project: projectID, seconds: whole)
         }
     }
 
@@ -398,6 +493,7 @@ public final class TrackingEngine {
         taskFraction -= Double(whole)
         taskAccruedSinceStart += whole
         taskUnwritten += whole
+        record(.tracked, project: taskProjectID, seconds: whole)
     }
 
     /// Fires once when a timed task reaches zero; "keep working" clears the timer so it stays quiet.
@@ -407,6 +503,7 @@ public final class TrackingEngine {
               activeTaskSeconds >= timer else { return }
         taskTimerFired = true
         flushTask()
+        flushSlice()
         broadcaster.send(.taskTimerExpired(taskID))
     }
 

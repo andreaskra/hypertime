@@ -37,6 +37,10 @@ struct CheckInView: View {
 
                 AmountField(viewModel: viewModel, presentation: presentation)
 
+                // Where the last day actually went, between the amount and the work it
+                // belongs to (TL-06).
+                TimelineStrip(viewModel: viewModel)
+
                 if hasTodayList || !viewModel.tasks.isEmpty || viewModel.isAddingTask {
                     VStack(alignment: .leading, spacing: Tokens.Space.s2) {
                         Hairline()

@@ -113,9 +113,16 @@ private struct TodayRowView: View {
 
     var body: some View {
         HStack(spacing: Tokens.Space.s2) {
+            // The project's own colour (TL-05), so the strip above needs no legend of its
+            // own, with the live status as a ring around it rather than a second dot.
             Circle()
-                .fill(indicatorColor)
+                .fill(Tokens.Series.color(slot: viewModel.colorSlot(for: row.project.id)))
                 .frame(width: Tokens.Size.indicatorDot, height: Tokens.Size.indicatorDot)
+                .overlay {
+                    Circle()
+                        .strokeBorder(indicatorColor, lineWidth: Tokens.Size.indicatorRing)
+                        .padding(-Tokens.Size.indicatorRingGap)
+                }
             Text(row.project.name)
                 .font(viewModel.isCurrent(row) ? Tokens.Typography.listRowCurrent : Tokens.Typography.listRow)
                 .foregroundStyle(Tokens.Palette.textPrimary.color)
@@ -134,7 +141,7 @@ private struct TodayRowView: View {
         .onHover { isHovering = $0 }
     }
 
-    /// Only the project time is accruing to carries a live indicator.
+    /// Only the project time is accruing to carries a live ring.
     private var indicatorColor: Color {
         guard viewModel.isCurrent(row) else { return .clear }
         if viewModel.isPaused { return Tokens.Palette.pausedIndicator.color }

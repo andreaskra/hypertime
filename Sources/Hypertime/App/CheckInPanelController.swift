@@ -180,6 +180,7 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
         switch mode {
         case .passive:
             didEngage = false
+                ActivationController.neutralise(panel)
             panel.orderFrontRegardless()                 // never activates us (R-08)
             appear(Tokens.Motion.popupAppearPassive)
             startAutoHide()
@@ -187,8 +188,10 @@ final class CheckInPanelController: NSObject, NSWindowDelegate {
             didEngage = true
             cancelAutoHide()
             focusedShownAt = Date()
-            activation.activate {
-                panel.makeKeyAndOrderFront(nil)
+            if ActivationController.isHeadless {
+                ActivationController.present(panel)
+            } else {
+                activation.activate { panel.makeKeyAndOrderFront(nil) }
             }
             appear(Tokens.Motion.popupAppearFocused)
             viewModel.focus = .project

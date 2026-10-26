@@ -196,6 +196,9 @@ enum Tokens {
         /// Header row and indicator dot, from the popup anatomy in HANDOFF.md.
         static let headerHeight: CGFloat = 20
         static let indicatorDot: CGFloat = 6
+        /// Live status as a ring around the project's colour swatch, rather than a second dot.
+        static let indicatorRing: CGFloat = 1.5
+        static let indicatorRingGap: CGFloat = 2
         static let iconButton: CGFloat = 20
         static let pausePopoverWidth: CGFloat = 240
         static let overflowMenuWidth: CGFloat = 190
@@ -276,6 +279,29 @@ enum Tokens {
     /// a bundled one, so it follows whatever the user has set their alert volume to.
     enum Sound {
         static let timerExpired = NSSound.Name("Submarine")
+    }
+
+    /// The 24-hour timeline strip (TL-01 … TL-06). Not from `tokens.json`; there was no such
+    /// thing in the handoff.
+    enum Strip {
+        /// Tall enough that a magnified mark has somewhere to grow into without the popup
+        /// changing height under the cursor.
+        static let height: CGFloat = 22
+        static let markHeight: CGFloat = 10
+        /// 348 pt of content over 144 brackets is a 2.4 pt pitch; the mark takes most of it
+        /// and the rest is the gap.
+        static let markWidth: CGFloat = 1.8
+        static let trackHeight: CGFloat = 1
+        /// How much wider the mark under the cursor gets, and how far the bulge reaches.
+        /// Kept modest on purpose: past about 1.5 the magnified marks overlap their
+        /// neighbours into a single blob and the bulge stops reading as marks at all.
+        /// Height is the dimension with room to grow, so height does most of the work.
+        static let widthGain: CGFloat = 1.5
+        static let magnifyRadius = 6
+        static let tick: CGFloat = 3
+        static let tickTall: CGFloat = 6
+        static let tickEveryHours = 3
+        static let captionGap: CGFloat = 3
     }
 
     /// The system load bar across the top of the popup. Not from `tokens.json`: there was no

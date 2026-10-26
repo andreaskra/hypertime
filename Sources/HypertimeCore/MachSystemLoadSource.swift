@@ -24,6 +24,16 @@ public final class MachSystemLoadSource: SystemLoadSource, @unchecked Sendable {
         self.diskInterval = diskInterval
     }
 
+    /// Reads the counters without touching the filesystem. Used at launch: processor usage
+    /// needs a previous read to exist before the first real one means anything, but asking a
+    /// 90 %-full volume for its capacity is a round trip nobody should wait on to see a menu
+    /// bar icon. The disk figure arrives with the first heartbeat instead.
+    public func prime() {
+        lock.lock()
+        defer { lock.unlock() }
+        if let ticks = Self.cpuTicks() { previousTicks = ticks }
+    }
+
     public func sample() -> SystemLoad {
         lock.lock()
         defer { lock.unlock() }

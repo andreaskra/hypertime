@@ -66,7 +66,7 @@ final class AppModel {
         store = try Store(path: path, clock: clock)
         engine = TrackingEngine(store: store, clock: clock, settings: settings)
         systemLoadSource = MachSystemLoadSource(clock: clock)
-        systemLoad = systemLoadSource.sample()
+        systemLoadSource.prime()
 
         if isDemo {
             try DemoData.seed(store: store, clock: clock)
@@ -82,6 +82,8 @@ final class AppModel {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             try? self.store.pruneChangeLog()
+            try? self.store.pruneSlices()
+            self.refreshColorSlots()
             LoginItemController.synchronise(settings: self.settings)
         }
 
@@ -106,7 +108,7 @@ final class AppModel {
                 case .pauseEnded: self.onPauseEnded?()
                 case .tick: self.onTick?()
                 case .statusChanged: self.onStatusChanged?(); self.onDataChanged?()
-                case .dataChanged: self.onDataChanged?()
+                case .dataChanged: self.refreshColorSlots(); self.onDataChanged?()
                 case .tasksChanged: self.onDataChanged?()
                 case .taskTimerExpired(let id): self.onTaskTimerExpired?(id)
                 }
@@ -155,6 +157,48 @@ final class AppModel {
     }
 
     // MARK: - Tasks
+
+    /// A project's permanent place in the categorical palette (TLD-07), or the neutral
+    /// "Other" slot once the palette runs out.
+    ///
+    /// Cached: the chart asks this once per segment per frame, and a database read per bar is
+    /// not what the colour of a bar should cost.
+    func colorSlot(for project: UUID) -> Int {
+        if let slot = colorSlots[project] { return slot }
+        refreshColorSlots()
+        return colorSlots[project] ?? Tokens.Series.maxSlots
+    }
+
+    private var colorSlots: [UUID: Int] = [:]
+
+    func refreshColorSlots() {
+        var slots: [UUID: Int] = [:]
+        for project in (try? store.projects(includeArchived: true)) ?? [] {
+            let slot = project.colorSlot ?? Tokens.Series.maxSlots
+            slots[project.id] = slot < Tokens.Series.maxSlots ? slot : Tokens.Series.maxSlots
+        }
+        colorSlots = slots
+    }
+
+    func slices(since: Date) -> [Slice] {
+        (try? store.slices(from: since, to: clock.now().addingTimeInterval(Timeline.grain))) ?? []
+    }
+
+    func projectName(_ id: UUID) -> String? { (try? store.project(id: id))??.name }
+
+    /// "14:20–14:30", in the user's own clock format, and "yesterday 23:50–00:00" when the
+    /// bracket is on the other side of midnight — a 24-hour window spans two days, so a bare
+    /// clock time names two moments and picks neither.
+    func clockRange(from: Date, to: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = clock.calendar
+        formatter.timeZone = clock.timeZone
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate("j:mm")
+        let span = formatter.string(from: from) + "–" + formatter.string(from: to)
+        let day = LocalDate(from, calendar: clock.calendar)
+        return day == today ? span : "yesterday " + span
+    }
 
     func openTasks() -> [TaskItem] { (try? store.tasks()) ?? [] }
 

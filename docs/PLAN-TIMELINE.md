@@ -1,6 +1,12 @@
 # Backlog — the 24-hour timeline
 
-> **Status: not started.** Drafted 2026-10-25 from a spoken brief. Same conventions as
+> **Status: built, 2026-10-26.** Built as written except where noted below; the §8 questions
+> were answered by building the recommended option in each case, and those answers are now
+> decisions in `DECISIONS.md` rather than open questions. What changed in the building:
+> TLD-02's backfill was **not** done (no history is reconstructed from `change_log` — the
+> strip starts empty and fills in), the marks are drawn in one `Canvas` rather than as 144
+> views, and the magnified mark grows mostly in height because width past about 1.5× merges
+> the bulge into a blob. Drafted 2026-10-25 from a spoken brief. Same conventions as
 > `PLAN.md`: **TL-xx** requirements, **TLD-xx** decisions, **TLA-xx** assumptions. Assumptions
 > are what I will build unless told otherwise. §8 is the short list of things I need answered
 > before starting.
@@ -147,13 +153,12 @@ The Dock behaviour, with one change that matters:
   has been observed at 572 pt with a long task list. One of those two is wrong and it should be
   understood before adding another 34 pt.
 
-## 8. What I need before starting
+## 8. What I needed before starting — and what was decided
 
-1. **TLD-07** — permanent per-project colours, changing how the Reports chart picks colours
-   today. Yes or no?
-2. **24 hours fixed**, or a window the user can change (12 h / 24 h / 48 h)? Fixed is assumed.
-3. The same strip in **Reports**, where there is room for a finer grain and a longer window —
-   worth doing, or is this a popup feature only?
-4. **TLD-03**'s ten-minute grain is the honest answer to the audit question but the ugliest of
-   the options. If the strip looks wrong in practice, is correctness or legibility the one to
-   keep?
+1. **TLD-07** — permanent per-project colours. **Built.** `project.color_slot`, assigned at
+   creation as the lowest free slot, backfilled by creation order. The Reports chart now reads
+   the same slot, so a project is one colour everywhere and stays that colour.
+2. **24 hours fixed.** Built fixed. `Timeline.window` is one constant if that changes.
+3. **The same strip in Reports** — not built. Still worth doing; the table is there for it.
+4. **TLD-03**'s ten-minute grain — kept. It looks denser than a coarser grain would, but a
+   single idle timeout occupies a whole mark, which is the question the strip answers.

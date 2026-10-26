@@ -53,6 +53,14 @@ enum ScreenshotRenderer {
         checkIn.timeText = "0:12:34"
         render("popup-hero", AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
 
+        // The strip with a bracket under the cursor: magnified, and the caption reading it.
+        if let hovered = checkIn.timeline.last(where: { !$0.isEmpty }) {
+            checkIn.hoveredBucket = hovered.start
+            render("popup-timeline-hover",
+                   AnyView(CheckInView(viewModel: checkIn, presentation: presentation)), in: url)
+            checkIn.hoveredBucket = nil
+        }
+
         // Two figures pinned to the menu bar, which is how the bar says which ones you are
         // already watching.
         checkIn.toggleMenuBarMetric(.cpu)

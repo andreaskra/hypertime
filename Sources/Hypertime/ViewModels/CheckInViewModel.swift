@@ -166,6 +166,8 @@ final class CheckInViewModel {
         refreshRows()
         menuBarMetrics = model.settings.menuBarMetrics
         refreshSystemLoad()
+        hoveredBucket = nil
+        refreshTimeline()
         focus = .none
     }
 
@@ -176,6 +178,7 @@ final class CheckInViewModel {
         refreshTotalsOnly()
         refreshTaskSeconds()
         refreshSystemLoad()
+        refreshTimeline()
         if tasks.contains(where: { isRunning($0) }) { breakdown = model.taskBreakdown(for: visibleDay) }
     }
 
@@ -255,6 +258,47 @@ final class CheckInViewModel {
     func refreshTasks() {
         tasks = model.openTasks()
         refreshTaskSeconds()
+    }
+
+    // MARK: - Timeline (TL-01 … TL-06)
+
+    private(set) var timeline: [TimelineBucket] = []
+
+    /// The bracket under the cursor, or nil. Drives both the magnification and the caption,
+    /// so there is only ever one answer to "which mark is being read".
+    var hoveredBucket: Date?
+
+    func refreshTimeline() {
+        let now = model.clock.now()
+        let slices = model.slices(since: now.addingTimeInterval(-Timeline.window - Timeline.grain))
+        let fresh = Timeline.buckets(from: slices, now: now)
+        if fresh != timeline { timeline = fresh }
+    }
+
+    func colorSlot(for project: UUID) -> Int { model.colorSlot(for: project) }
+
+    func projectName(_ id: UUID?) -> String? { id.flatMap { model.projectName($0) } }
+
+    /// The caption under the strip: the window at rest, the bracket being read on hover.
+    var timelineCaption: String {
+        guard let start = hoveredBucket,
+              let bucket = timeline.first(where: { $0.start == start }) else {
+            return "last 24 hours"
+        }
+        let span = model.clockRange(from: bucket.start,
+                                    to: bucket.start.addingTimeInterval(Timeline.grain))
+        guard !bucket.isEmpty else { return span + " · nothing tracked" }
+        let parts = bucket.parts.prefix(3).map { part -> String in
+            let name: String
+            switch part.kind {
+            case .tracked: name = projectName(part.projectID) ?? "untitled"
+            case .idle: name = "idle"
+            case .paused: name = "paused"
+            }
+            // A bracket with one thing in it needs no arithmetic spelled out.
+            return bucket.isMixed ? name + " " + model.formatter.string(part.seconds, style: .units) : name
+        }
+        return span + " · " + parts.joined(separator: " · ")
     }
 
     // MARK: - System load

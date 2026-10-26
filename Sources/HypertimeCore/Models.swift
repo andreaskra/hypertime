@@ -110,13 +110,19 @@ public struct Project: Identifiable, Hashable, Codable, Sendable {
     public var createdAt: Date
     public var lastUsedAt: Date?
     public var isArchived: Bool
+    /// Index into the categorical palette, fixed at creation (TLD-07). A project's colour has
+    /// to mean the same thing in the chart, the timeline and the day list, which it cannot do
+    /// while it is derived from whatever ranking happens to be on screen.
+    public var colorSlot: Int?
 
-    public init(id: UUID = UUID(), name: String, createdAt: Date, lastUsedAt: Date? = nil, isArchived: Bool = false) {
+    public init(id: UUID = UUID(), name: String, createdAt: Date, lastUsedAt: Date? = nil,
+                isArchived: Bool = false, colorSlot: Int? = nil) {
         self.id = id
         self.name = name
         self.createdAt = createdAt
         self.lastUsedAt = lastUsedAt
         self.isArchived = isArchived
+        self.colorSlot = colorSlot
     }
 }
 

@@ -21,7 +21,9 @@ enum SelfTest {
         // Generous on purpose: this runs straight after a build as often as not, and a bound
         // set close to the typical figure fails on a busy machine rather than on a regression.
         // The number to watch is the one logged on a real launch; this catches the cliff.
-        check("app set-up to the status item is under 500 ms", setUp < 500, String(format: "%.0f ms", setUp))
+        // Typical moved from ~150 ms to ~230 ms when the popup gained the load bar and the
+        // timeline, so the bound moved with it to keep the same 3× headroom it was chosen for.
+        check("app set-up to the status item is under 700 ms", setUp < 700, String(format: "%.0f ms", setUp))
         if let launched = AppDelegate.launchDate {
             let total = now.timeIntervalSince(launched) * 1000
             check("launch to the status item is under 300 ms", total < 300,
@@ -59,6 +61,7 @@ enum SelfTest {
         checkTimerReturnKey(model)
         checkTaskClockRuns(panel, model)
         checkSystemLoad(panel, model)
+        checkTimeline(panel, model)
 
         // Opening by hand while another app holds the keyboard: losing key status in the first
         // moments must make the panel insist, not dismiss itself.
@@ -744,6 +747,77 @@ enum SelfTest {
         panel.hide()
     }
 
+    /// The timeline strip: that the day the engine recorded is the day the strip shows, that
+    /// idle survives as idle, and that the caption names what is under the cursor.
+    private static func checkTimeline(_ panel: CheckInPanelController, _ model: AppModel) {
+        panel.show(mode: .focused)
+        let viewModel = panel.viewModel
+        model.settings.idleTimeoutMinutes = 10
+
+        guard let project = model.projects().first else {
+            check("a project to put on the strip", false)
+            return
+        }
+
+        // Half an hour of work, ten minutes of which was nobody there.
+        model.engine.start(projectID: project.id)
+        let now = model.clock.now()
+        for offset in stride(from: 1800, through: 600, by: -600) {
+            try? model.store.addSlice(bucketStart: now.addingTimeInterval(-Double(offset)),
+                                      kind: .tracked, project: project.id, 600)
+        }
+        try? model.store.addSlice(bucketStart: now.addingTimeInterval(-1200),
+                                  kind: .idle, project: nil, 600)
+        try? model.store.addSlice(bucketStart: now.addingTimeInterval(-1200),
+                                  kind: .tracked, project: project.id, -600)
+        viewModel.refreshTimeline()
+
+        check("the strip is a full day of brackets", viewModel.timeline.count == Timeline.bucketCount,
+              "\(viewModel.timeline.count)")
+        // The engine is running as this check runs, so it writes a bracket of its own; what
+        // matters is that everything put there is there, not that nothing else is.
+        let filled = viewModel.timeline.filter { !$0.isEmpty }
+        let seeded = [1800, 1200, 600].map { Timeline.bucketStart(for: now.addingTimeInterval(-Double($0))) }
+        check("…with what was recorded on it",
+              seeded.allSatisfy { start in filled.contains { $0.start == start } },
+              "\(filled.count) brackets filled")
+        check("…and the idle stretch kept as idle, not as work",
+              filled.contains { $0.dominant?.kind == .idle },
+              filled.compactMap { $0.dominant?.kind.rawValue }.joined(separator: ", "))
+
+        // A project's colour is its own, not its rank in whatever is on screen (TLD-07).
+        let slot = viewModel.colorSlot(for: project.id)
+        _ = try? model.store.addSeconds(project: project.id, day: model.today, 7200)
+        model.refreshColorSlots()
+        check("a project keeps its colour whatever the ranking does",
+              viewModel.colorSlot(for: project.id) == slot, "\(slot) then \(viewModel.colorSlot(for: project.id))")
+
+        // The caption is the only readout, so it has to follow the cursor exactly.
+        check("with nothing hovered the caption names the window",
+              viewModel.timelineCaption == "last 24 hours", viewModel.timelineCaption)
+        if let tracked = filled.first(where: { $0.dominant?.kind == .tracked }) {
+            viewModel.hoveredBucket = tracked.start
+            let caption = viewModel.timelineCaption
+            check("hovering a tracked bracket names the project", caption.contains(project.name), caption)
+            check("…and the ten minutes it covers", caption.contains("–"), caption)
+        }
+        if let idle = filled.first(where: { $0.dominant?.kind == .idle }) {
+            viewModel.hoveredBucket = idle.start
+            check("hovering an idle bracket says so", viewModel.timelineCaption.contains("idle"),
+                  viewModel.timelineCaption)
+        }
+        viewModel.hoveredBucket = viewModel.timeline.first?.start
+        let empty = viewModel.timelineCaption
+        check("hovering a bracket nothing is known about says that too",
+              empty.contains("nothing tracked"), empty)
+        check("…and says which day it is, since the window spans two",
+              empty.contains("yesterday"), empty)
+        viewModel.hoveredBucket = nil
+
+        model.engine.stop()
+        panel.hide()
+    }
+
     /// The load bar: real figures, on the scale the bar is drawn on, and a click that puts a
     /// figure in the menu bar and takes it back out again.
     private static func checkSystemLoad(_ panel: CheckInPanelController, _ model: AppModel) {
@@ -848,7 +922,7 @@ enum SelfTest {
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = hosting
         window.setFrameOrigin(NSPoint(x: -5000, y: -5000))
-        window.makeKeyAndOrderFront(nil)
+        ActivationController.present(window)
         hosting.layoutSubtreeIfNeeded()
         settle()
 
