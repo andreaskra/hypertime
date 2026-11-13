@@ -23,8 +23,13 @@ struct ChartSegment: Identifiable {
 final class ReportsViewModel {
     private let model: AppModel
 
+    /// Day · Week · Month · Year are zoom presets on one continuous axis, not four separate
+    /// views. Pinching between them is the same movement by hand.
     var kind: PeriodKind = .day {
-        didSet { rebuildPeriod() }
+        didSet {
+            guard kind != oldValue else { return }
+            setZoom(days: Double(Period.spanLength(for: kind)))
+        }
     }
 
     /// Rebuilds the period for the current kind and alignment, keeping the day in view.
@@ -48,7 +53,72 @@ final class ReportsViewModel {
     /// Calendar periods snap to weeks and months; a sliding window keeps the same width and
     /// steps a day at a time, so any arbitrary stretch can be looked at.
     var isSliding = false {
-        didSet { rebuildPeriod() }
+        didSet {
+            guard isSliding != oldValue else { return }
+            if isSliding { rebuildWindow() } else { rebuildPeriod() }
+        }
+    }
+
+    // MARK: - The continuous window (scroll and zoom)
+
+    /// How many days are on screen. Fractional, because zooming is continuous: pinching
+    /// should not jump between a week and a month with nothing in between.
+    private(set) var visibleDays: Double = 7
+
+    /// How far the right-hand edge sits in the past, in days. Fractional for the same reason
+    /// panning is: a window that can only move a whole day at a time is not scrolling, it is
+    /// paging, and at week width a day is a seventh of the screen.
+    private(set) var windowEnd: Double = 0
+
+    /// The part of a day the window is offset by, which the chart translates itself by so the
+    /// bars slide under the cursor rather than snapping.
+    var subDayOffset: Double { windowEnd - windowEnd.rounded(.down) }
+
+    static let minimumVisibleDays: Double = 1
+    static let maximumVisibleDays: Double = 730
+
+    /// Two-finger scroll. Positive moves into the past.
+    func pan(byDays delta: Double) {
+        guard delta != 0 else { return }
+        setWindow(end: windowEnd + delta, days: visibleDays)
+    }
+
+    /// Pinch. `focus` is where the cursor sits across the plot, 0 at the left edge and 1 at
+    /// the right, so the day under the fingers stays under the fingers.
+    func zoom(by factor: Double, focus: Double) {
+        guard factor > 0, factor != 1 else { return }
+        let days = (visibleDays / factor).clamped(to: Self.minimumVisibleDays...Self.maximumVisibleDays)
+        guard days != visibleDays else { return }
+        // Days from the right edge to the cursor stay put across the change of scale.
+        let fromRight = (1 - focus) * visibleDays
+        let newFromRight = (1 - focus) * days
+        setWindow(end: windowEnd + (newFromRight - fromRight), days: days)
+    }
+
+    func setZoom(days: Double) {
+        setWindow(end: windowEnd, days: days.clamped(to: Self.minimumVisibleDays...Self.maximumVisibleDays))
+    }
+
+    private func setWindow(end: Double, days: Double) {
+        // Nothing is tracked in the future, so the window stops with today at its right edge.
+        let clampedEnd = max(end, 0)
+        let changed = clampedEnd != windowEnd || days != visibleDays
+        windowEnd = clampedEnd
+        visibleDays = days
+        guard changed else { return }
+        rebuildWindow()
+    }
+
+    private func rebuildWindow() {
+        let whole = max(Int(visibleDays.rounded()), 1)
+        let endOffset = Int(windowEnd.rounded(.down))
+        let end = model.day(model.today, offsetBy: -endOffset)
+        anchor = end
+        // Exactly the days on screen, and no more: the window is also what the totals, the
+        // averages, the table and the export all report, so a day added for the chart's
+        // convenience would be a day added to the arithmetic.
+        period = .span(start: model.day(end, offsetBy: -(whole - 1)), days: whole)
+        reload()
     }
 
     enum Presentation: String, CaseIterable { case chart, table }
@@ -63,7 +133,8 @@ final class ReportsViewModel {
         let today = model.today
         anchor = today
         period = .day(today)
-        reload()
+        visibleDays = Double(Period.spanLength(for: kind))
+        rebuildWindow()
     }
 
     private var calendar: Calendar { model.clock.calendar }
@@ -90,17 +161,19 @@ final class ReportsViewModel {
         }
     }
 
+    /// The arrows page by a whole window, or step a day at a time while the window is set to
+    /// slide (R-18). Scrolling is for anything finer than either.
     func go(_ delta: Int) {
-        period = period.shifted(by: delta, calendar: calendar, weekStart: weekStart)
-        // Anchor on the end of the window: that is the day a sliding range is "at".
-        anchor = period.range(calendar: calendar, weekStart: weekStart).upperBound
-        reload()
+        pan(byDays: Double(-delta) * (isSliding ? 1 : visibleDays))
     }
 
     func goToToday() {
-        anchor = model.today
-        rebuildPeriod()
+        setWindow(end: 0, days: visibleDays)
+        rebuildWindow()
     }
+
+    /// True when the window's right edge is on today, which is what the Today button undoes.
+    var isAtToday: Bool { windowEnd < 0.5 }
 
     func showDay(_ day: LocalDate) {
         show(.day, anchoredAt: day)
@@ -223,8 +296,19 @@ final class ReportsViewModel {
 
     var legendRows: [ReportRow] { report?.rows ?? [] }
 
-    /// Bars for the current period. Day shows one bar per project; the longer periods bucket by
-    /// day (or month, for a year) and stack the projects inside each bar.
+    /// How wide one bar is in days, chosen so a bar never gets too thin to see. A year of
+    /// single days would be 365 slivers; a week of months would be one bar.
+    enum Grain { case project, day, week, month }
+
+    var grain: Grain {
+        if visibleDays <= 1.5 { return .project }
+        if visibleDays <= 70 { return .day }
+        if visibleDays <= 400 { return .week }
+        return .month
+    }
+
+    /// Bars for the window. The day view shows one bar per project; wider windows bucket by
+    /// day, week or month and stack the projects inside each bar.
     var chartBuckets: [ChartBucket] {
         guard let report else { return [] }
         let rows = report.rows.filter { isVisible($0.project.id) }
@@ -238,8 +322,8 @@ final class ReportsViewModel {
             }
         }
 
-        switch kind {
-        case .day:
+        switch grain {
+        case .project:
             return rows.filter { $0.seconds > 0 }.map { row in
                 ChartBucket(id: row.project.id.uuidString,
                             label: row.project.name,
@@ -247,22 +331,38 @@ final class ReportsViewModel {
                             segments: [ChartSegment(id: row.project.id, name: row.project.name,
                                                     slot: slot(for: row.project.id), seconds: row.seconds)])
             }
-        case .week, .month:
+        case .day:
             return report.days.map { day in
                 ChartBucket(id: day.isoString,
-                            label: kind == .week ? shortDayLabel(day) : String(day.day),
+                            label: visibleDays <= 10 ? shortDayLabel(day) : String(day.day),
                             day: day,
                             segments: segments { $0.seconds(on: day) })
             }
-        case .year:
-            return months.map { month in
-                let range = month.range(calendar: calendar, weekStart: weekStart)
-                return ChartBucket(id: "\(month)",
-                                   label: monthInitial(month),
-                                   day: range.lowerBound,
-                                   segments: segments { row in
-                                       row.perDay.reduce(0) { $0 + (range.contains($1.key) ? $1.value : 0) }
-                                   })
+        case .week, .month:
+            // Group the window's days into runs, so one bar covers a week or a month.
+            var groups: [(key: String, label: String, days: [LocalDate])] = []
+            for day in report.days {
+                let key: String
+                let label: String
+                if grain == .week {
+                    let week = Period.containing(day, kind: .week, calendar: calendar, weekStart: weekStart)
+                    key = week.range(calendar: calendar, weekStart: weekStart).lowerBound.isoString
+                    label = String(day.day)
+                } else {
+                    key = "\(day.year)-\(day.month)"
+                    label = monthInitial(Period.month(year: day.year, month: day.month))
+                }
+                if groups.last?.key == key {
+                    groups[groups.count - 1].days.append(day)
+                } else {
+                    groups.append((key, label, [day]))
+                }
+            }
+            return groups.map { group in
+                ChartBucket(id: group.key,
+                            label: group.label,
+                            day: group.days.first,
+                            segments: segments { row in group.days.reduce(0) { $0 + row.seconds(on: $1) } })
             }
         }
     }

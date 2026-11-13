@@ -40,18 +40,37 @@ struct ActivityChartView: View {
 
     // MARK: - Plot
 
+    /// The plot is a window onto a continuous axis rather than a fixed period: two fingers
+    /// pan it and a pinch zooms it. One extra bar is drawn past each edge and the whole row is
+    /// translated by the sub-day remainder, so scrolling slides rather than snapping a day at
+    /// a time — at a week's width, a day is a seventh of the screen.
     private var plot: some View {
         let maximum = viewModel.chartMaximum
         return HStack(alignment: .bottom, spacing: Tokens.Space.s1) {
             axis(maximum: maximum)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .bottom, spacing: barSpacing) {
+            GeometryReader { geo in
+                let width = max(geo.size.width, 1)
+                let dayWidth = width / CGFloat(max(viewModel.visibleDays, 1))
+                HStack(alignment: .bottom, spacing: barSpacing(dayWidth)) {
                     ForEach(viewModel.chartBuckets) { bucket in
-                        bar(bucket, maximum: maximum)
+                        bar(bucket, maximum: maximum, width: barWidth(dayWidth))
                     }
                 }
-                .padding(.trailing, Tokens.Space.s2)
+                .frame(width: width, alignment: .trailing)
+                .offset(x: CGFloat(viewModel.subDayOffset) * dayWidth)
+                .clipped()
+                .overlay {
+                    ChartScroller(
+                        onScroll: { points in
+                            viewModel.pan(byDays: Double(points / dayWidth))
+                        },
+                        onZoom: { factor, focus in
+                            viewModel.zoom(by: factor, focus: focus)
+                        },
+                        onHover: { _ in })
+                }
             }
+            .frame(height: barMaxHeight + 22)
         }
         .frame(height: barMaxHeight + 22)
     }
@@ -71,24 +90,23 @@ struct ActivityChartView: View {
         .padding(.bottom, 22)
     }
 
-    private var barSpacing: CGFloat {
-        switch viewModel.kind {
-        case .day: return Tokens.Space.s2
-        case .week, .year: return Tokens.Space.s2
-        case .month: return Tokens.Series.gap
-        }
+    /// Bars keep the 2 pt surface gap the palette's separation depends on, and never less.
+    private func barSpacing(_ dayWidth: CGFloat) -> CGFloat {
+        min(max(dayWidth * 0.18, Tokens.Series.gap), Tokens.Space.s2)
     }
 
-    private var barWidth: CGFloat {
-        switch viewModel.kind {
-        case .day: return 54
-        case .week: return 56
-        case .month: return 16
-        case .year: return 40
+    private func barWidth(_ dayWidth: CGFloat) -> CGFloat {
+        let perBucket: CGFloat
+        switch viewModel.grain {
+        case .project: perBucket = 54
+        case .day: perBucket = dayWidth
+        case .week: perBucket = dayWidth * 7
+        case .month: perBucket = dayWidth * 30
         }
+        return max(perBucket - barSpacing(dayWidth), 2)
     }
 
-    private func bar(_ bucket: ChartBucket, maximum: Seconds) -> some View {
+    private func bar(_ bucket: ChartBucket, maximum: Seconds, width barWidth: CGFloat) -> some View {
         VStack(spacing: Tokens.Space.s1) {
             Spacer(minLength: 0)
             VStack(spacing: Tokens.Series.gap) {

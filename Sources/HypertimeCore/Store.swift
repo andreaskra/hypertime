@@ -257,6 +257,21 @@ public final class Store: @unchecked Sendable {
                 try db.execute(sql: "UPDATE project SET color_slot = ? WHERE id = ?", arguments: [slot, id])
             }
         }
+        migrator.registerMigration("v4-colour-by-use") { db in
+            // Slots were handed out in creation order, which meant a project with eight
+            // seconds on it could hold a colour while one with fifty hours fell past the end
+            // of the palette and went grey. Dealt again, most-tracked first. This runs once;
+            // after it a project keeps its slot for life.
+            let ids = try String.fetchAll(db, sql: """
+                SELECT p.id FROM project p
+                LEFT JOIN day_entry e ON e.project_id = p.id
+                GROUP BY p.id
+                ORDER BY COALESCE(SUM(e.seconds), 0) DESC, p.created_at ASC
+                """)
+            for (slot, id) in ids.enumerated() {
+                try db.execute(sql: "UPDATE project SET color_slot = ? WHERE id = ?", arguments: [slot, id])
+            }
+        }
         return migrator
     }
 
@@ -311,9 +326,13 @@ public final class Store: @unchecked Sendable {
 
         var project = Project(name: trimmed, createdAt: clock.now())
         try write(.projects) { db in
-            // Lowest free slot, so deleting a project frees its colour for the next one rather
-            // than marching the palette off its end.
-            let taken = Set(try Int.fetchAll(db, sql: "SELECT color_slot FROM project WHERE color_slot IS NOT NULL"))
+            // Lowest slot no live project holds: archiving or deleting a project gives its
+            // colour back rather than marching the palette off its end. A project that exists
+            // but has no time on it yet keeps its slot — it is still in the list, and two
+            // projects created back to back must not be handed the same colour.
+            let taken = Set(try Int.fetchAll(db, sql: """
+                SELECT color_slot FROM project WHERE color_slot IS NOT NULL AND archived = 0
+                """))
             var slot = 0
             while taken.contains(slot) { slot += 1 }
             project.colorSlot = slot
@@ -343,6 +362,22 @@ public final class Store: @unchecked Sendable {
                 throw StoreError.duplicateName(trimmed)
             }
             try self.log(db, kind: "project.rename", payload: ["id": id.uuidString, "name": trimmed])
+        }
+    }
+
+    /// Deals the palette again, most-tracked project first. Run once by `v4-colour-by-use`;
+    /// exposed so the ordering it depends on is testable without a migration.
+    public func redealColorSlots() throws {
+        try write(.projects) { db in
+            let ids = try String.fetchAll(db, sql: """
+                SELECT p.id FROM project p
+                LEFT JOIN day_entry e ON e.project_id = p.id
+                GROUP BY p.id
+                ORDER BY COALESCE(SUM(e.seconds), 0) DESC, p.created_at ASC
+                """)
+            for (slot, id) in ids.enumerated() {
+                try db.execute(sql: "UPDATE project SET color_slot = ? WHERE id = ?", arguments: [slot, id])
+            }
         }
     }
 

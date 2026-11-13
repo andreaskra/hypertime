@@ -228,4 +228,36 @@ struct TimelineTests {
         #expect(kept.count == 1)
         #expect(kept.first?.bucketStart ?? .distantPast > old)
     }
+
+    @Test("colours go to the projects with time on them, not the ones created first")
+    func coloursFollowUse() throws {
+        // A busy project created late must not fall off the end of the palette behind a
+        // string of projects that were created early and barely used.
+        let today = LocalDate(clock.now(), calendar: clock.calendar)
+        var late: Project?
+        for index in 0..<10 {
+            let project = try store.findOrCreateProject(named: "Filler \(index)")
+            _ = try store.addSeconds(project: project.id, day: today, 60)
+            late = project
+        }
+        let busy = try store.findOrCreateProject(named: "The one that matters")
+        _ = try store.addSeconds(project: busy.id, day: today, 100_000)
+
+        // The reassignment is a migration, so run the same ordering it uses.
+        try store.redealColorSlots()
+        let reloaded = try store.project(id: busy.id)
+        #expect(reloaded?.colorSlot == 0,
+                "the busiest project should hold the first colour, got \(reloaded?.colorSlot ?? -1)")
+        let filler = try store.project(id: late!.id)
+        #expect((filler?.colorSlot ?? 0) > 0)
+    }
+
+    @Test("an archived project gives its colour back")
+    func archivingFreesASlot() throws {
+        let first = try store.findOrCreateProject(named: "Takes slot two")
+        #expect(first.colorSlot == 2)
+        try store.setArchived(id: first.id, true)
+        let next = try store.findOrCreateProject(named: "Reuses it")
+        #expect(next.colorSlot == 2, "got \(next.colorSlot ?? -1)")
+    }
 }

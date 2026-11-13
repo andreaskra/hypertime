@@ -262,3 +262,10 @@ extension Int {
         return r < 0 ? r + m : r
     }
 }
+
+public extension Comparable {
+    /// Keeps a value inside a range — the zoom and pan arithmetic leans on it constantly.
+    func clamped(to limits: ClosedRange<Self>) -> Self {
+        min(max(self, limits.lowerBound), limits.upperBound)
+    }
+}

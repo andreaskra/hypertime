@@ -348,20 +348,35 @@ enum Tokens {
         static func hairlineWidth(_ increased: Bool) -> CGFloat { increased ? 1 : 0.5 }
     }
 
-    /// Categorical series colours for the chart. Both columns are the validated reference
-    /// palette (dataviz skill): worst adjacent CVD ΔE 9.1 light / 8.4 dark, normal-vision 19.6 /
-    /// 19.3. Slots are assigned in fixed order and never cycled — a ninth project folds into
-    /// "Other" rather than repeating a hue.
+    /// Categorical series colours for the chart, validated for **every pair**, not only for
+    /// neighbours in the legend: this is a stacked bar, so any two projects can end up
+    /// touching. Light worst-pair CVD ΔE 9.0, normal-vision 18.0 — both pass. Dark worst-pair
+    /// CVD ΔE 7.7 sits in the 6–8 floor band, which is legal only alongside secondary
+    /// encoding, and has it: a 2 pt surface gap between segments, a legend that is always
+    /// present, and a hover readout that names what is under the cursor.
+    ///
+    /// The previous palette failed this test — red and orange were ΔE 7.1 apart for a reader
+    /// with full colour vision, which is why so many bars looked alike.
+    ///
+    /// The two columns are selected per surface rather than lifted from one another: the
+    /// lightness band a colour has to sit in is 0.43–0.77 on the light surface and 0.48–0.67
+    /// on the dark one, so a light step lightened for dark leaves the band and stops being
+    /// distinguishable. Three slots therefore shift hue between modes. Nobody reads both at
+    /// once, and each mode is internally correct, which is what matters.
+    ///
+    /// Slots are assigned in fixed order and never cycled — a ninth project folds into
+    /// "Other" rather than repeating a hue. Seventeen projects cannot all have their own
+    /// colour; that is a property of colour vision, not of this code.
     enum Series {
         static let slots: [ThemedColor] = [
-            ThemedColor("#2a78d6", "#3987e5"),   // blue
-            ThemedColor("#eb6834", "#d95926"),   // orange
-            ThemedColor("#1baf7a", "#199e70"),   // aqua
-            ThemedColor("#eda100", "#c98500"),   // yellow
-            ThemedColor("#e87ba4", "#d55181"),   // magenta
-            ThemedColor("#008300", "#008300"),   // green
-            ThemedColor("#4a3aa7", "#9085e9"),   // violet
-            ThemedColor("#e34948", "#e66767"),   // red
+            ThemedColor("#9561f3", "#7935c6"),   // violet
+            ThemedColor("#3fb519", "#197800"),   // green
+            ThemedColor("#be0000", "#b45054"),   // red
+            ThemedColor("#00b5e2", "#007296"),   // cyan
+            ThemedColor("#f5519c", "#c54ac4"),   // pink
+            ThemedColor("#a5148f", "#0099ff"),   // magenta / blue
+            ThemedColor("#0067bb", "#00ab8b"),   // blue / teal
+            ThemedColor("#007f5f", "#a58400"),   // teal / olive
         ]
         static let other = ThemedColor("#8A8A8E", "#98989D")
         static let maxSlots = 8
